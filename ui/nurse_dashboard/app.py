@@ -1,29 +1,24 @@
-"""
-看護師ダッシュボード
-実行方法: python -m streamlit run ui/nurse_dashboard/app.py --server.port 8502
-"""
-
 import streamlit as st
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from robot_control.logger import append_log, EventType
-import json, os, time
+import json, os, time, sys
 from datetime import datetime
 from pathlib import Path
+
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 STATE_FILE = DATA_DIR / "shared_state.json"
 LOG_FILE   = DATA_DIR / "robot_log.json"
 
+sys.path.insert(0, str(ROOT_DIR))
+from robot_control.state_machine import STATE_MESSAGES
+from robot_control.logger import append_log, EventType
+from vision.qr_detection.verify_patient_kit import verify
+
 st.set_page_config(page_title="看護師ダッシュボード", page_icon="👩‍⚕️", layout="wide")
 
-
-
-
 def load_state():
-    if os.path.exists(STATE_FILE):
-        with open(STATE_FILE, "r", encoding="utf-8") as f:
+    if STATE_FILE.exists():
+        with open(STATE_FILE, encoding="utf-8") as f:
             return json.load(f)
     return {"request": None, "robot_state": "IDLE"}
 
@@ -39,44 +34,35 @@ def log_event(event_type, s, prev=None, msg=""):
         kit=s.get("kit", "—"),
         previous_state=prev or "—",
         next_state=s.get("robot_state", "—"),
-        result="OK" if "ERROR" not in s.get("robot_state","") else "NG",
+        result="OK" if "ERROR" not in s.get("robot_state", "") else "NG",
         message=msg,
     )
 
-STATES = {
-    "IDLE":                           ("⬜", "待機中",        "#6b7280"),
-    "REQUEST_RECEIVED":               ("🔔", "リクエスト受信", "#f59e0b"),
-    "KIT_SELECTED":                   ("📦", "キット選択中",   "#f59e0b"),
-    "MOVING_TO_BEDSIDE":              ("🚗", "移動中",         "#3b82f6"),
-    "VERIFYING_PATIENT":              ("🔍", "ID照合中",       "#8b5cf6"),
-    "DOCKING":                        ("🔗", "ドッキング中",   "#8b5cf6"),
-    "TRAY_LIFTING":                   ("⬆️",  "トレイ上昇中",  "#06b6d4"),
-    "WAITING_FOR_NURSE_CONFIRMATION": ("⏳", "確認待ち",       "#f97316"),
-    "KIT_RELEASED":                   ("✅", "キット開放",     "#10b981"),
-    "COMPLETED":                      ("🎉", "完了",           "#10b981"),
-    "ERROR":                          ("🚨", "エラー",         "#ef4444"),
+COLORS = {
+    "IDLE": "#6b7280", "REQUEST_RECEIVED": "#f59e0b", "KIT_SELECTED": "#f59e0b",
+    "MOVING_TO_BEDSIDE": "#3b82f6", "VERIFYING_PATIENT": "#8b5cf6", "DOCKING": "#8b5cf6",
+    "TRAY_LIFTING": "#06b6d4", "WAITING_FOR_NURSE_CONFIRMATION": "#f97316",
+    "KIT_RELEASED": "#10b981", "COMPLETED": "#10b981", "ERROR": "#ef4444",
 }
-
+ICONS = {
+    "IDLE": "⬜", "REQUEST_RECEIVED": "🔔", "KIT_SELECTED": "📦",
+    "MOVING_TO_BEDSIDE": "🚗", "VERIFYING_PATIENT": "🔍", "DOCKING": "🔗",
+    "TRAY_LIFTING": "⬆️", "WAITING_FOR_NURSE_CONFIRMATION": "⏳",
+    "KIT_RELEASED": "✅", "COMPLETED": "🎉", "ERROR": "🚨",
+}
 NEXT = {
-    "REQUEST_RECEIVED":               "KIT_SELECTED",
-    "KIT_SELECTED":                   "MOVING_TO_BEDSIDE",
-    "MOVING_TO_BEDSIDE":              "VERIFYING_PATIENT",
-    "VERIFYING_PATIENT":              "DOCKING",
-    "DOCKING":                        "TRAY_LIFTING",
-    "TRAY_LIFTING":                   "WAITING_FOR_NURSE_CONFIRMATION",
+    "REQUEST_RECEIVED": "KIT_SELECTED",
+    "KIT_SELECTED": "MOVING_TO_BEDSIDE",
+    "MOVING_TO_BEDSIDE": "VERIFYING_PATIENT",
+    "VERIFYING_PATIENT": "DOCKING",
+    "DOCKING": "TRAY_LIFTING",
+    "TRAY_LIFTING": "WAITING_FOR_NURSE_CONFIRMATION",
     "WAITING_FOR_NURSE_CONFIRMATION": "KIT_RELEASED",
-    "KIT_RELEASED":                   "COMPLETED",
+    "KIT_RELEASED": "COMPLETED",
 }
-
-FLOW = [
-    "REQUEST_RECEIVED", "KIT_SELECTED", "MOVING_TO_BEDSIDE",
-    "VERIFYING_PATIENT", "DOCKING", "TRAY_LIFTING",
-    "WAITING_FOR_NURSE_CONFIRMATION", "KIT_RELEASED", "COMPLETED",
-]
-
+FLOW = list(NEXT.keys()) + ["COMPLETED"]
 RISK_COLOR = {"転倒リスクあり": "🔴", "要確認": "🟡", "なし": "🟢"}
 
-# ── ヘッダー ──
 col_h1, col_h2 = st.columns([3, 1])
 with col_h1:
     st.markdown("## 👩‍⚕️ 看護師ダッシュボード")
@@ -85,74 +71,96 @@ with col_h2:
 
 state = load_state()
 rs = state.get("robot_state", "IDLE")
-icon, label, color = STATES.get(rs, ("❓", rs, "#6b7280"))
+icon = ICONS.get(rs, "❓")
+color = COLORS.get(rs, "#6b7280")
 
-# ── 進捗バー（Streamlitネイティブで描画）──
-st.markdown("##### 進捗")
-cols = st.columns(len(FLOW))
-for i, s in enumerate(FLOW):
-    si, sl, sc = STATES[s]
-    done   = FLOW.index(s) <= FLOW.index(rs) if rs in FLOW else False
+steps_html = ""
+for s in FLOW:
+    sc = COLORS.get(s, "#6b7280")
+    sl = STATE_MESSAGES.get(s, s)
+    done = FLOW.index(s) <= FLOW.index(rs) if rs in FLOW else False
     active = s == rs
-    with cols[i]:
-        if active:
-            st.markdown(f"<div style='text-align:center; color:{sc}; font-weight:bold; font-size:11px'>{si}<br>{sl}</div>", unsafe_allow_html=True)
-        elif done:
-            st.markdown(f"<div style='text-align:center; color:{sc}; font-size:11px'>{si}<br>{sl}</div>", unsafe_allow_html=True)
-        else:
-            st.markdown(f"<div style='text-align:center; color:#d1d5db; font-size:11px'>○<br>{sl}</div>", unsafe_allow_html=True)
+    dot = f"background:{sc};" if done else "background:#e5e7eb;"
+    lbl = f"color:{sc};font-weight:600;" if active else "color:#9ca3af;"
+    steps_html += (
+        f"<div style='display:inline-flex;flex-direction:column;"
+        f"align-items:center;gap:4px;min-width:60px'>"
+        f"<div style='width:14px;height:14px;border-radius:50%;{dot}'></div>"
+        f"<span style='font-size:10px;{lbl}'>{sl}</span></div>"
+    )
 
-st.divider()
+st.markdown(
+    f"<div style='background:#f9fafb;border-radius:12px;padding:14px 20px;"
+    f"margin-bottom:20px;overflow-x:auto;white-space:nowrap;'>"
+    f"<div style='display:flex;gap:6px;'>{steps_html}</div></div>",
+    unsafe_allow_html=True,
+)
 
-# ── IDLE のとき ──
 if rs == "IDLE":
     st.info("🟢 患者からのリクエストを待っています")
-
 else:
-    req      = state.get("request", "—")
-    risk     = state.get("risk", "—")
-    kit      = state.get("kit", "—")
-    pid      = state.get("patient_id", "—")
-    ts       = state.get("timestamp", "")
+    req = state.get("request", "—")
+    risk = state.get("risk", "—")
+    kit = state.get("kit", "—")
+    pid = state.get("patient_id", "—")
+    ts = state.get("timestamp", "")
     time_str = datetime.fromisoformat(ts).strftime("%H:%M:%S") if ts else "—"
     risk_icon = RISK_COLOR.get(risk, "⚪")
 
-    # ── リクエスト詳細 ──
-    st.markdown(f"### {icon} {label}")
-    col1, col2, col3 = st.columns(3)
-    with col1:
+    st.markdown(f"### {icon} {STATE_MESSAGES.get(rs, rs)}")
+    c1, c2, c3 = st.columns(3)
+    with c1:
         st.metric("患者ID", pid)
         st.metric("リクエスト", req)
-    with col2:
+    with c2:
         st.metric("リスク", f"{risk_icon} {risk}")
-        st.metric("必要キット", kit)
-    with col3:
-        st.metric("リクエスト時刻", time_str)
+        st.metric("キット", kit)
+    with c3:
+        st.metric("時刻", time_str)
 
     st.divider()
-
-    # ── 操作ボタン ──
     st.markdown("#### 🎮 操作")
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         if rs == "WAITING_FOR_NURSE_CONFIRMATION":
             if st.button("✅ キットを開放する", use_container_width=True, type="primary"):
+                prev = rs
                 state["robot_state"] = "KIT_RELEASED"
+                log_event(EventType.STATE_TRANSITION, state, prev=prev, msg="看護師がキット開放確認")
                 save_state(state)
                 st.rerun()
+        elif rs == "VERIFYING_PATIENT":
+            if st.button("🔍 QR照合してDOCKING", use_container_width=True):
+                result = verify(state.get("patient_id", ""), state.get("kit", ""))
+                if result["ok"]:
+                    prev = rs
+                    state["robot_state"] = "DOCKING"
+                    log_event(EventType.QR_OK, state, prev=prev, msg=result["message"])
+                    save_state(state)
+                    st.success("✅ 照合OK")
+                    st.rerun()
+                else:
+                    log_event(EventType.QR_NG, state, prev=rs, msg=result["message"])
+                    state["robot_state"] = "ERROR"
+                    save_state(state)
+                    st.error(f"❌ {result['message']}")
+                    st.rerun()
         elif rs in NEXT:
-            _, next_label, _ = STATES[NEXT[rs]]
-            if st.button(f"▶ 次へ：{next_label}", use_container_width=True):
-                state["robot_state"] = NEXT[rs]
-                if NEXT[rs] == "COMPLETED":
-                    log_event(EventType.COMPLETED, state, prev=rs, msg="タスク完了")
+            next_s = NEXT[rs]
+            if st.button(f"▶ 次へ：{STATE_MESSAGES.get(next_s, next_s)}", use_container_width=True):
+                prev = rs
+                state["robot_state"] = next_s
+                log_event(EventType.STATE_TRANSITION, state, prev=prev)
+                if next_s == "COMPLETED":
+                    log_event(EventType.COMPLETED, state, prev=prev, msg="タスク完了")
                 save_state(state)
                 st.rerun()
 
     with col2:
         if rs == "COMPLETED":
             if st.button("🔄 次のリクエストへ", use_container_width=True):
+                log_event(EventType.RESET, state, prev=rs, msg="リセット")
                 save_state({"request": None, "robot_state": "IDLE"})
                 st.rerun()
 
@@ -174,14 +182,14 @@ else:
     if rs == "ERROR":
         st.error("🚨 エラー発生。確認後にリセットしてください。")
         if st.button("🔄 リセット", use_container_width=True):
+            log_event(EventType.RESET, state, prev=rs, msg="ERRORからリセット")
             save_state({"request": None, "robot_state": "IDLE"})
             st.rerun()
 
-# ── ログ ──
 st.divider()
 st.markdown("#### 📜 動作ログ")
-if os.path.exists(LOG_FILE):
-    with open(LOG_FILE, "r", encoding="utf-8") as f:
+if LOG_FILE.exists():
+    with open(LOG_FILE, encoding="utf-8") as f:
         logs = json.load(f)
     if logs:
         import pandas as pd
@@ -191,7 +199,6 @@ if os.path.exists(LOG_FILE):
 else:
     st.caption("まだログがありません")
 
-# ── 自動更新 ──
 st.divider()
 auto = st.checkbox("⏱ 3秒ごとに自動更新")
 if auto:
