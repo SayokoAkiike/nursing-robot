@@ -13,7 +13,7 @@ VALID_COMBINATIONS = {
 KIT_NAMES = {
     "KIT_TOILETING_A": "トイレ介助キット",
     "KIT_WATER":       "給水キット",
-    "ALERT_NURSE_ONLY":    "点滴確認キット",
+    "ALERT_NURSE_ONLY":    "看護師確認依頼",
 }
 
 

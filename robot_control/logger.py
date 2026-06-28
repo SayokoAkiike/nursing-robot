@@ -7,8 +7,8 @@ DATA_DIR = ROOT_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 LOG_FILE = DATA_DIR / "robot_log.json"
 
-def append_log(event_type, patient_id="â", request="â", kit="â",
-               previous_state="â", next_state="â", result="â", message=""):
+def append_log(event_type, patient_id="—", request="—", kit="—",
+               previous_state="—", next_state="—", result="—", message=""):
     logs = []
     if LOG_FILE.exists():
         with open(LOG_FILE, encoding="utf-8") as f:

@@ -1,8 +1,0 @@
-{
-  "request": "トイレ介助",
-  "kit": "KIT_TOILETING_A",
-  "patient_id": "PATIENT_A_ROOM_203",
-  "risk": "転倒リスクあり",
-  "robot_state": "VERIFYING_PATIENT",
-  "timestamp": "2026-06-28T12:35:41.635429"
-}

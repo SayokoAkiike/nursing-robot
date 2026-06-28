@@ -69,7 +69,7 @@ else:
             st.rerun()
     with col3:
         if st.button("💉 点滴が気になる", use_container_width=True, key="iv"):
-            save_state({"request": "点滴確認", "kit": "ALERT_NURSE_ONLY",
+            save_state({"request": "看護師確認", "kit": "ALERT_NURSE_ONLY",
                 "patient_id": "PATIENT_A_ROOM_203", "risk": "要確認",
                 "robot_state": "REQUEST_RECEIVED", "timestamp": datetime.now().isoformat()})
             st.rerun()
