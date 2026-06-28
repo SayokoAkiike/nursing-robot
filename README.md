@@ -1,178 +1,42 @@
-# 🏥 nursing-robot — Bedside Assist Docking Robot (PreCareBot)
+🏥 nursing-robot — Bedside Assist Docking Robot (PreCareBot)
 
-> **患者の「トイレに行きたい」リクエストを受け取り、看護師が訪室する前にトイレ介助キットをベッドサイドへ届けるラストワンマイルロボット。**
+患者の「トイレに行きたい」リクエストを受け取り、看護師が訪室する前にキットをベッドサイドへ届けるラストワンマイルロボット。
+⚠️ このプロジェクトは医療機器ではありません。ロボコン・研究・教育目的のプロトタイプです。
 
-[![Python](https://img.shields.io/badge/Python-3.10+-blue)](https://python.org)
-[![Streamlit](https://img.shields.io/badge/UI-Streamlit-red)](https://streamlit.io)
-[![PyBullet](https://img.shields.io/badge/Sim-PyBullet-orange)](https://pybullet.org)
-[![HuggingFace](https://img.shields.io/badge/Data-HuggingFace-yellow)](https://huggingface.co)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
----
-
-## 🎯 Problem（解決したい問題）
-
-病院でナースコールから看護師到着まで数分かかる間に、患者が一人で立ち上がろうとして**転倒するリスク**がある。特に夜間・人手不足の時間帯に起きやすい。
-
-## 💡 Solution（解決策）
-
+🎯 Problem
+病院でナースコールから看護師到着まで数分かかる間に、患者が一人で立ち上がろうとして転倒するリスクがある。
+💡 Solution
 看護師が訪室するより先にロボットがキットを届け、患者画面に「立ち上がらずお待ちください」と表示する。
 
-```
-患者がボタンを押す
-       ↓
-ロボットがキットを選択・ベッドサイドへ移動
-       ↓
-QRコードで患者IDを照合
-       ↓
-トレイを看護師が使いやすい高さに提示
-       ↓
-患者画面：「立ち上がらずお待ちください」
-       ↓
-看護師が確認ボタン → キット開放 → ログ記録
-```
+🚧 Safety Boundary（安全境界）
+✅ やること❌ やらないこと患者リクエストの受信患者の身体を支えるキットのベッドサイドへの配送移乗・立たせるQRで患者ID・キットIDを照合点滴・薬剤に触れる看護師確認後にキットを開放医療判断をする患者への待機メッセージ表示看護師確認なしに開放
+詳細 → docs/safety.md
 
----
+✅ 現在実装済み・デモで動くもの
+機能ファイル状態患者リクエストUIui/patient_request_app/app.py✅看護師ダッシュボードui/nurse_dashboard/app.py✅QRコード生成vision/qr_detection/generate_qr.py✅QRコード読み取りvision/qr_detection/read_qr.py✅患者ID・キットID照合vision/qr_detection/verify_patient_kit.py✅ロボット状態遷移（ダミー）robot_control/state_machine.py✅ログ管理robot_control/logger.py✅pytest テスト（9件）tests/test_core.py✅
 
-## 🚧 Safety Boundary（安全境界）
+🔜 今後実装予定
+機能フェーズPyBullet 病室シミュレーションDay 13〜18実機MVP（台車・トレイ・緊急停止）Day 21〜40LeRobotデータセット収集・公開Day 41〜55Google Colab 模倣学習実験Day 56〜60FastAPI + Next.js UI刷新Day 41〜
 
-| ✅ やること | ❌ やらないこと |
-|-----------|--------------|
-| 患者リクエストの受信 | 患者の身体を支える |
-| キットのベッドサイドへの配送 | 移乗・立たせる |
-| QRで患者ID・キットIDを照合 | 点滴・薬剤に触れる |
-| 看護師確認後にキットを開放 | 医療判断をする |
-| 患者への待機メッセージ表示 | 看護師確認なしに開放 |
+🛠 Tech Stack
+技術用途状態Python 3.10+メイン制御・状態管理✅ 実装済みStreamlit患者UI・看護師ダッシュボード✅ 実装済みOpenCVQR/ArUco認識・ID照合✅ 実装済みpytestテスト（9件）✅ 実装済みPyBullet病室シミュレーション（CPU動作）🔜 Day13〜Hugging Face / LeRobotデータセット公開・模倣学習🔜 Day41〜FastAPI + Next.jsUI刷新・API化🔜 Day41〜
 
-> 詳細 → [docs/safety.md](docs/safety.md)
-
----
-
-## 🏗 System Architecture
-
-```
-┌──────────────┐  request   ┌──────────────┐  state   ┌──────────────┐
-│  Patient UI  │──────────▶│ Task Router  │─────────▶│   Nurse      │
-│ (Streamlit)  │            │  (Python)    │           │  Dashboard   │
-└──────────────┘            └──────┬───────┘           │ (Streamlit)  │
-                                   │                   └──────────────┘
-                        ┌──────────▼───────┐
-┌──────────────┐  QR   │  State Machine   │
-│ OpenCV/QR    │───────▶│ (robot_control)  │
-│ (ArUco対応)  │        └──────────────────┘
-└──────────────┘
-        ↕ Sim-to-Real 検証
-┌──────────────┐
-│  PyBullet    │  ← Isaac Simの代替（CPU動作・完全無料）
-│  病室シミュ  │
-└──────────────┘
-```
-
----
-
-## 🛠 Tech Stack
-
-| 技術 | 用途 | 無料？ |
-|------|------|--------|
-| Python 3.10+ | メイン制御・状態管理 | ✅ |
-| Streamlit | 患者UI・看護師ダッシュボード | ✅ |
-| OpenCV | QR/ArUco認識・ID照合 | ✅ |
-| PyBullet | 病室シミュレーション（CPU動作） | ✅ |
-| Hugging Face / LeRobot | データセット公開・模倣学習 | ✅ パブリック無制限 |
-| GitHub Codespaces | 開発環境（ブラウザで動く） | ✅ 月60h無料 |
-| Google Colab | 模倣学習実験（無料GPU） | ✅ |
-
----
-
-## 📁 Repository Structure
-
-```
-nursing-robot/
-├── README.md
-├── requirements.txt
-├── .devcontainer/
-│   └── devcontainer.json        # Codespaces設定（pip自動実行）
-├── docs/
-│   ├── concept.md               # プロジェクトコンセプト
-│   ├── safety.md                # 安全境界の定義
-│   ├── demo_scenario.md         # 1分デモ台本
-│   └── roadmap.md               # Day別ロードマップ
-├── ui/
-│   ├── patient_request_app/
-│   │   └── app.py               # 患者リクエスト画面
-│   └── nurse_dashboard/
-│       └── app.py               # 看護師ダッシュボード
-├── vision/
-│   └── qr_detection/
-│       ├── generate_qr.py       # QRコード生成
-│       ├── read_qr.py           # QRコード読み取り
-│       └── verify_patient_kit.py # 患者ID・キットID照合
-├── robot_control/
-│   ├── state_machine.py         # ロボット状態遷移
-│   ├── task_router.py           # リクエスト振り分け
-│   └── dummy_robot.py           # 実機なしダミー動作
-├── simulation/
-│   └── pybullet_notes/
-│       ├── what_is_pybullet.md  # PyBullet調査メモ
-│       └── hospital_scene.py    # 病室シーン（Day13〜）
-├── lerobot/
-│   ├── notes/
-│   │   └── dataset_card_draft.md
-│   └── dataset_design.md
-├── hardware/
-│   ├── parts_list.md            # 実機MVP部品リスト
-│   └── wiring_plan.md
-└── experiments/
-    └── docking_metric_plan.md   # ドッキング評価指標
-```
-
----
-
-## 🚀 Quick Start（GitHub Codespaces）
-
-**ブラウザだけで動かす方法：**
-
-1. このページ右上の「Code」→「Codespaces」→「Create codespace」をクリック
-2. ターミナルが開いたら以下を実行：
-
-```bash
-# 依存関係インストール（自動で実行される場合もある）
+🚀 Quick Start
 pip install -r requirements.txt
+python vision/qr_detection/generate_qr.py
+python -m streamlit run ui/patient_request_app/app.py --server.port 8501
+python -m streamlit run ui/nurse_dashboard/app.py --server.port 8502
+pytest tests/ -v
 
-# 患者UI起動
-streamlit run ui/patient_request_app/app.py --server.port 8501
+🗓 Roadmap
+フェーズ期間内容状態Phase 1Day 1〜20ソフト基盤・UI・QR・PyBullet入門🔥 進行中Phase 2Day 21〜40実機MVP（台車・トレイ・緊急停止）🔜 予定Phase 3Day 41〜60LeRobot・HF公開・模倣学習実験🔜 予定
 
-# 別ターミナルで看護師ダッシュボード起動
-streamlit run ui/nurse_dashboard/app.py --server.port 8502
-```
+📊 進捗（2026-06-28時点）
+Day内容状態Day 1〜4GitHub・Codespaces環境構築✅Day 5患者リクエストUI✅Day 6看護師ダッシュボード✅Day 7QRコード生成✅Day 8QRコード読み取り✅Day 9患者ID・キットID照合✅Day 10ロボット状態遷移ダミー実装✅Day 11UIと状態遷移の統合・自動更新✅Day 12GitHub整理・README更新✅Day 13〜PyBullet病室シミュ🔜
 
----
+👥 Team
+名前役割Sayoko Akiikeプロジェクトリード
 
-## 🗓 Roadmap
-
-| フェーズ | 期間 | 内容 |
-|---------|------|------|
-| **Phase 1** | Day 1〜20 | GitHub整備・UI・QR照合・PyBullet入門・LeRobot設計 |
-| **Phase 2** | Day 21〜40 | 実機MVP（台車・トレイ・緊急停止・デモ動画） |
-| **Phase 3** | Day 41〜60 | テレオペデータ収集・HF公開・模倣学習実験 |
-
-> 詳細 → [docs/roadmap.md](docs/roadmap.md)
-
----
-
-## 👥 Team
-
-| 名前 | 役割 |
-|------|------|
-| Sayoko Akiike | プロジェクトリード |
-| （メンバー追加予定） | — |
-
----
-
-## 📄 License
-
-MIT License — 詳細は [LICENSE](LICENSE) を参照
-
----
-
-*このプロジェクトは医療機器ではありません。ロボコン・研究・教育目的のプロトタイプです。*
+📄 License
+MIT License
