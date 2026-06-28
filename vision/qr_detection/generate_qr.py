@@ -18,7 +18,7 @@ QR_DATA = {
     # キットID
     "KIT_TOILETING_A":    "kit_toileting_a.png",
     "KIT_WATER":          "kit_water.png",
-    "KIT_IV_ALERT":       "kit_iv_alert.png",
+    "ALERT_NURSE_ONLY":       "kit_iv_alert.png",
 }
 
 def generate_qr(data: str, filename: str):

@@ -6,11 +6,17 @@
 import streamlit as st
 import json, os, time
 from datetime import datetime
+from pathlib import Path
+ROOT_DIR = Path(__file__).resolve().parents[2]
+DATA_DIR = ROOT_DIR / "data"
+DATA_DIR.mkdir(exist_ok=True)
+STATE_FILE = DATA_DIR / "shared_state.json"
+LOG_FILE   = DATA_DIR / "robot_log.json"
 
 st.set_page_config(page_title="看護師ダッシュボード", page_icon="👩‍⚕️", layout="wide")
 
-STATE_FILE = "shared_state.json"
-LOG_FILE   = "robot_log.json"
+
+
 
 def load_state():
     if os.path.exists(STATE_FILE):

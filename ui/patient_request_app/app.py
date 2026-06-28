@@ -1,10 +1,16 @@
 import streamlit as st
 import json, os, time
 from datetime import datetime
+from pathlib import Path
+ROOT_DIR = Path(__file__).resolve().parents[2]
+DATA_DIR = ROOT_DIR / "data"
+DATA_DIR.mkdir(exist_ok=True)
+STATE_FILE = DATA_DIR / "shared_state.json"
+LOG_FILE   = DATA_DIR / "robot_log.json"
 
 st.set_page_config(page_title="患者リクエスト", page_icon="🏥", layout="centered")
 
-STATE_FILE = "shared_state.json"
+
 
 def load_state():
     if os.path.exists(STATE_FILE):
@@ -63,7 +69,7 @@ else:
             st.rerun()
     with col3:
         if st.button("💉 点滴が気になる", use_container_width=True, key="iv"):
-            save_state({"request": "点滴確認", "kit": "KIT_IV_ALERT",
+            save_state({"request": "点滴確認", "kit": "ALERT_NURSE_ONLY",
                 "patient_id": "PATIENT_A_ROOM_203", "risk": "要確認",
                 "robot_state": "REQUEST_RECEIVED", "timestamp": datetime.now().isoformat()})
             st.rerun()

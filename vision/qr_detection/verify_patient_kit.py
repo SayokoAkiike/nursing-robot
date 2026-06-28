@@ -6,14 +6,14 @@
 # ── 正しい患者ID → キットIDの対応表 ─────────────────
 VALID_COMBINATIONS = {
     "PATIENT_A_ROOM_203": ["KIT_TOILETING_A", "KIT_WATER"],
-    "PATIENT_B_ROOM_204": ["KIT_WATER", "KIT_IV_ALERT"],
+    "PATIENT_B_ROOM_204": ["KIT_WATER", "ALERT_NURSE_ONLY"],
 }
 
 # キットIDの日本語名
 KIT_NAMES = {
     "KIT_TOILETING_A": "トイレ介助キット",
     "KIT_WATER":       "給水キット",
-    "KIT_IV_ALERT":    "点滴確認キット",
+    "ALERT_NURSE_ONLY":    "点滴確認キット",
 }
 
 
@@ -72,7 +72,7 @@ if __name__ == "__main__":
 
     test_cases = [
         ("PATIENT_A_ROOM_203", "KIT_TOILETING_A"),   # ✅ OK
-        ("PATIENT_A_ROOM_203", "KIT_IV_ALERT"),       # ❌ NG（対応外）
+        ("PATIENT_A_ROOM_203", "ALERT_NURSE_ONLY"),       # ❌ NG（対応外）
         ("PATIENT_B_ROOM_204", "KIT_WATER"),           # ✅ OK
         ("PATIENT_B_ROOM_204", "KIT_TOILETING_A"),     # ❌ NG（対応外）
         ("PATIENT_UNKNOWN",    "KIT_WATER"),           # ❌ NG（患者不明）
