@@ -1,0 +1,23 @@
+# nursing-robot — Python dependencies
+# GitHub Codespaces / Python 3.10+ で動作確認済み
+
+# UI
+streamlit==1.35.0
+
+# Computer Vision（Codespacesではheadless版を使う）
+opencv-python-headless==4.9.0.80
+Pillow==10.3.0
+
+# QR Code generation
+qrcode[pil]==7.4.2
+
+# Data
+numpy==1.26.4
+pandas==2.2.2
+
+# Simulation（CPU動作・GPU不要）
+pybullet==3.2.7
+
+# Utilities
+python-dotenv==1.0.1
+rich==13.7.1
