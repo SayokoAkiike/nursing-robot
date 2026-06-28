@@ -1,148 +1,128 @@
 """
-患者リクエストUI (Day 5)
-実行方法: streamlit run ui/patient_request_app/app.py
+患者リクエストUI
+実行方法: python -m streamlit run ui/patient_request_app/app.py --server.port 8501
 """
 
 import streamlit as st
-import json
-import os
+import json, os
 from datetime import datetime
 
-# ── ページ設定 ───────────────────────────────────────
-st.set_page_config(
-    page_title="患者リクエスト",
-    page_icon="🏥",
-    layout="centered",
-)
+st.set_page_config(page_title="患者リクエスト", page_icon="🏥", layout="centered")
 
-# ── 共有状態ファイルのパス ───────────────────────────
 STATE_FILE = "shared_state.json"
 
 def load_state():
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    return {"request": None, "robot_state": "IDLE", "timestamp": None}
+    return {"request": None, "robot_state": "IDLE"}
 
-def save_state(state: dict):
+def save_state(state):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
-# ── スタイル ─────────────────────────────────────────
 st.markdown("""
 <style>
-    .main { background-color: #f0f8ff; }
-    .patient-header {
-        text-align: center;
-        padding: 20px;
-        background: #1a73e8;
-        color: white;
-        border-radius: 12px;
-        margin-bottom: 24px;
-    }
-    .status-box {
-        padding: 16px;
-        border-radius: 10px;
-        margin-top: 20px;
-        font-size: 18px;
-        text-align: center;
-    }
-    .warning-box {
-        background-color: #fff3cd;
-        border: 2px solid #ffc107;
-        padding: 20px;
-        border-radius: 12px;
-        text-align: center;
-        font-size: 20px;
-        font-weight: bold;
-        margin-top: 20px;
-    }
+div.stButton > button {
+    height: 90px;
+    font-size: 18px;
+    border-radius: 16px;
+    border: 2px solid #ddd;
+    background: white;
+}
+div.stButton > button:hover { border-color: #1a73e8; color: #1a73e8; }
+.cancel-btn > button {
+    background: #fff5f5 !important;
+    border-color: #f87171 !important;
+    color: #dc2626 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
-# ── ヘッダー ─────────────────────────────────────────
 st.markdown("""
-<div class="patient-header">
-    <h2>🏥 203号室 患者A</h2>
-    <p>ご用件をボタンで教えてください</p>
+<div style="text-align:center; padding:20px; background:linear-gradient(135deg,#1a73e8,#0d47a1);
+color:white; border-radius:16px; margin-bottom:24px;">
+<h2 style="margin:0">🏥 203号室　患者 A</h2>
+<p style="margin:8px 0 0; opacity:0.9">ご用件をボタンで教えてください</p>
 </div>
 """, unsafe_allow_html=True)
 
-# ── 現在の状態を読み込む ─────────────────────────────
 state = load_state()
 robot_state = state.get("robot_state", "IDLE")
-current_request = state.get("request")
 
-# ── リクエスト済みの場合は待機画面 ──────────────────
 if robot_state not in ["IDLE", "COMPLETED", "ERROR"]:
     st.markdown("""
-    <div class="warning-box">
-        ⚠️ 立ち上がらずお待ちください<br>
-        <span style="font-size:16px">看護師がまもなく参ります</span><br><br>
-        Please do not stand up.<br>
-        <span style="font-size:14px">A nurse will arrive shortly.</span>
+    <div style="background:#fff8e1; border:2px solid #f59e0b; border-radius:16px;
+    padding:28px; text-align:center; margin-bottom:20px;">
+        <div style="font-size:40px">⚠️</div>
+        <div style="font-size:22px; font-weight:bold; color:#92400e; margin:8px 0">
+            立ち上がらずお待ちください
+        </div>
+        <div style="font-size:14px; color:#78350f">看護師がまもなく参ります</div>
+        <hr style="border-color:#f59e0b; margin:16px 0">
+        <div style="font-size:16px; color:#92400e">Please do not stand up.</div>
+        <div style="font-size:13px; color:#78350f">A nurse will arrive shortly.</div>
     </div>
     """, unsafe_allow_html=True)
 
-    st.info(f"🤖 ロボット状態：{robot_state}")
+    req = state.get("request", "")
+    st.info(f"📋 リクエスト中：**{req}**　｜　🤖 ロボット状態：`{robot_state}`")
 
-    if current_request:
-        st.success(f"📋 リクエスト：{current_request}")
+    if robot_state == "REQUEST_RECEIVED":
+        st.markdown('<div class="cancel-btn">', unsafe_allow_html=True)
+        if st.button("✖️ リクエストを取り消す", use_container_width=True):
+            save_state({"request": None, "robot_state": "IDLE"})
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.caption("※ ロボットが移動中のため取り消しは看護師にお声がけください")
 
-    # 自動更新
-    st.caption("ページは自動更新されます...")
-    st.button("🔄 更新")
+    if st.button("🔄 画面を更新する", use_container_width=True):
+        st.rerun()
 
-# ── リクエストボタン ─────────────────────────────────
+elif robot_state == "COMPLETED":
+    st.success("✅ 介助が完了しました。ありがとうございました。")
+    if st.button("🔄 最初の画面に戻る", use_container_width=True):
+        save_state({"request": None, "robot_state": "IDLE"})
+        st.rerun()
+
+elif robot_state == "ERROR":
+    st.error("🚨 エラーが発生しました。看護師をお呼びください。")
+    if st.button("🔄 リセット", use_container_width=True):
+        save_state({"request": None, "robot_state": "IDLE"})
+        st.rerun()
+
 else:
-    if robot_state == "COMPLETED":
-        st.success("✅ 介助が完了しました。ありがとうございました。")
-
     st.markdown("### ご用件を選んでください")
-
     col1, col2, col3 = st.columns(3)
 
     with col1:
         if st.button("🚽\nトイレに\n行きたい", use_container_width=True, key="toilet"):
-            new_state = {
-                "request": "トイレ介助",
-                "request_en": "Toileting assistance",
-                "kit": "KIT_TOILETING_A",
-                "patient_id": "PATIENT_A_ROOM_203",
-                "risk": "転倒リスクあり",
-                "robot_state": "REQUEST_RECEIVED",
+            save_state({
+                "request": "トイレ介助", "request_en": "Toileting assistance",
+                "kit": "KIT_TOILETING_A", "patient_id": "PATIENT_A_ROOM_203",
+                "risk": "転倒リスクあり", "robot_state": "REQUEST_RECEIVED",
                 "timestamp": datetime.now().isoformat(),
-            }
-            save_state(new_state)
+            })
             st.rerun()
-
     with col2:
         if st.button("💧\n水が\nほしい", use_container_width=True, key="water"):
-            new_state = {
-                "request": "水の提供",
-                "request_en": "Water request",
-                "kit": "KIT_WATER",
-                "patient_id": "PATIENT_A_ROOM_203",
-                "risk": "なし",
-                "robot_state": "REQUEST_RECEIVED",
+            save_state({
+                "request": "水の提供", "request_en": "Water request",
+                "kit": "KIT_WATER", "patient_id": "PATIENT_A_ROOM_203",
+                "risk": "なし", "robot_state": "REQUEST_RECEIVED",
                 "timestamp": datetime.now().isoformat(),
-            }
-            save_state(new_state)
+            })
             st.rerun()
-
     with col3:
         if st.button("💉\n点滴が\n気になる", use_container_width=True, key="iv"):
-            new_state = {
-                "request": "点滴確認",
-                "request_en": "IV check",
-                "kit": "KIT_IV_ALERT",
-                "patient_id": "PATIENT_A_ROOM_203",
-                "risk": "要確認",
-                "robot_state": "REQUEST_RECEIVED",
+            save_state({
+                "request": "点滴確認", "request_en": "IV check",
+                "kit": "KIT_IV_ALERT", "patient_id": "PATIENT_A_ROOM_203",
+                "risk": "要確認", "robot_state": "REQUEST_RECEIVED",
                 "timestamp": datetime.now().isoformat(),
-            }
-            save_state(new_state)
+            })
             st.rerun()
 
-    st.markdown("---")
+    st.divider()
     st.caption("🔔 ボタンを押すと看護師に通知され、ロボットが準備を開始します")
