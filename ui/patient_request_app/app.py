@@ -1,15 +1,16 @@
 import streamlit as st
-import json, os, time
+import json, os, time, sys
 from datetime import datetime
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from robot_control.logger import append_log, EventType
 from pathlib import Path
+
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 STATE_FILE = DATA_DIR / "shared_state.json"
 LOG_FILE   = DATA_DIR / "robot_log.json"
+
+sys.path.insert(0, str(ROOT_DIR))
+from robot_control.logger import append_log, EventType
 
 st.set_page_config(page_title="患者リクエスト", page_icon="🏥", layout="centered")
 
@@ -63,18 +64,21 @@ else:
             save_state({"request": "トイレ介助", "kit": "KIT_TOILETING_A",
                 "patient_id": "PATIENT_A_ROOM_203", "risk": "転倒リスクあり",
                 "robot_state": "REQUEST_RECEIVED", "timestamp": datetime.now().isoformat()})
+            append_log(EventType.REQUEST_CREATED, patient_id="PATIENT_A_ROOM_203", request="トイレ介助", kit="KIT_TOILETING_A", next_state="REQUEST_RECEIVED", message="患者がリクエスト")
             st.rerun()
     with col2:
         if st.button("💧 水がほしい", use_container_width=True, key="water"):
             save_state({"request": "水の提供", "kit": "KIT_WATER",
                 "patient_id": "PATIENT_A_ROOM_203", "risk": "なし",
                 "robot_state": "REQUEST_RECEIVED", "timestamp": datetime.now().isoformat()})
+            append_log(EventType.REQUEST_CREATED, patient_id="PATIENT_A_ROOM_203", request="水の提供", kit="KIT_WATER", next_state="REQUEST_RECEIVED", message="患者がリクエスト")
             st.rerun()
     with col3:
         if st.button("💉 点滴が気になる", use_container_width=True, key="iv"):
             save_state({"request": "看護師確認", "kit": "ALERT_NURSE_ONLY",
                 "patient_id": "PATIENT_A_ROOM_203", "risk": "要確認",
                 "robot_state": "REQUEST_RECEIVED", "timestamp": datetime.now().isoformat()})
+            append_log(EventType.REQUEST_CREATED, patient_id="PATIENT_A_ROOM_203", request="看護師確認", kit="ALERT_NURSE_ONLY", next_state="REQUEST_RECEIVED", message="患者がリクエスト")
             st.rerun()
     st.divider()
     st.caption("🔔 ボタンを押すと看護師に通知され、ロボットが準備を開始します")
