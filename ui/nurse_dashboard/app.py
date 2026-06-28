@@ -62,27 +62,15 @@ NEXT = {
     "KIT_RELEASED":                   "COMPLETED",
 }
 
+FLOW = [
+    "REQUEST_RECEIVED", "KIT_SELECTED", "MOVING_TO_BEDSIDE",
+    "VERIFYING_PATIENT", "DOCKING", "TRAY_LIFTING",
+    "WAITING_FOR_NURSE_CONFIRMATION", "KIT_RELEASED", "COMPLETED",
+]
+
 RISK_COLOR = {"転倒リスクあり": "🔴", "要確認": "🟡", "なし": "🟢"}
 
-st.markdown("""
-<style>
-.state-card {
-    border-radius: 14px; padding: 18px 22px;
-    margin-bottom: 16px; border: 1.5px solid #e5e7eb;
-    background: white;
-}
-.state-badge {
-    display: inline-block; padding: 4px 14px; border-radius: 20px;
-    font-size: 13px; font-weight: 600;
-}
-.progress-step {
-    display: inline-flex; flex-direction: column; align-items: center;
-    font-size: 11px; gap: 4px; min-width: 60px;
-}
-.step-dot { width: 14px; height: 14px; border-radius: 50%; }
-</style>
-""", unsafe_allow_html=True)
-
+# ── ヘッダー ──
 col_h1, col_h2 = st.columns([3, 1])
 with col_h1:
     st.markdown("## 👩‍⚕️ 看護師ダッシュボード")
@@ -93,40 +81,26 @@ state = load_state()
 rs = state.get("robot_state", "IDLE")
 icon, label, color = STATES.get(rs, ("❓", rs, "#6b7280"))
 
-FLOW = [
-    "REQUEST_RECEIVED", "KIT_SELECTED", "MOVING_TO_BEDSIDE",
-    "VERIFYING_PATIENT", "DOCKING", "TRAY_LIFTING",
-    "WAITING_FOR_NURSE_CONFIRMATION", "KIT_RELEASED", "COMPLETED",
-]
-
-steps_html = ""
-for s in FLOW:
+# ── 進捗バー（Streamlitネイティブで描画）──
+st.markdown("##### 進捗")
+cols = st.columns(len(FLOW))
+for i, s in enumerate(FLOW):
     si, sl, sc = STATES[s]
     done   = FLOW.index(s) <= FLOW.index(rs) if rs in FLOW else False
     active = s == rs
-    dot_style   = f"background:{sc};" if done else "background:#e5e7eb;"
-    label_style = f"color:{sc}; font-weight:600;" if active else "color:#9ca3af;"
-    steps_html += f"""
-    <div class="progress-step">
-        <div class="step-dot" style="{dot_style}"></div>
-        <span style="font-size:10px; {label_style}">{sl}</span>
-    </div>"""
+    with cols[i]:
+        if active:
+            st.markdown(f"<div style='text-align:center; color:{sc}; font-weight:bold; font-size:11px'>{si}<br>{sl}</div>", unsafe_allow_html=True)
+        elif done:
+            st.markdown(f"<div style='text-align:center; color:{sc}; font-size:11px'>{si}<br>{sl}</div>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<div style='text-align:center; color:#d1d5db; font-size:11px'>○<br>{sl}</div>", unsafe_allow_html=True)
 
-st.markdown(f"""
-<div style="background:#f9fafb; border-radius:12px; padding:14px 20px;
-margin-bottom:20px; overflow-x:auto; white-space:nowrap;">
-<div style="display:flex; gap:6px; align-items:flex-start; justify-content:space-between;">
-{steps_html}
-</div>
-</div>
-""", unsafe_allow_html=True)
+st.divider()
 
+# ── IDLE のとき ──
 if rs == "IDLE":
-    st.markdown("""
-    <div style="text-align:center; padding:48px; color:#9ca3af; font-size:18px;">
-        🟢　患者からのリクエストを待っています
-    </div>
-    """, unsafe_allow_html=True)
+    st.info("🟢 患者からのリクエストを待っています")
 
 else:
     req      = state.get("request", "—")
@@ -137,24 +111,21 @@ else:
     time_str = datetime.fromisoformat(ts).strftime("%H:%M:%S") if ts else "—"
     risk_icon = RISK_COLOR.get(risk, "⚪")
 
-    st.markdown(f"""
-    <div class="state-card">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-            <span style="font-size:17px; font-weight:600">📋 現在のリクエスト</span>
-            <span class="state-badge" style="background:{color}22; color:{color}; border:1px solid {color}66">
-                {icon} {label}
-            </span>
-        </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:14px;">
-            <div><span style="color:#6b7280">患者ID</span><br><b>{pid}</b></div>
-            <div><span style="color:#6b7280">リクエスト時刻</span><br><b>{time_str}</b></div>
-            <div><span style="color:#6b7280">リクエスト内容</span><br><b>{req}</b></div>
-            <div><span style="color:#6b7280">リスク</span><br><b>{risk_icon} {risk}</b></div>
-            <div><span style="color:#6b7280">必要キット</span><br><b>{kit}</b></div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    # ── リクエスト詳細 ──
+    st.markdown(f"### {icon} {label}")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("患者ID", pid)
+        st.metric("リクエスト", req)
+    with col2:
+        st.metric("リスク", f"{risk_icon} {risk}")
+        st.metric("必要キット", kit)
+    with col3:
+        st.metric("リクエスト時刻", time_str)
 
+    st.divider()
+
+    # ── 操作ボタン ──
     st.markdown("#### 🎮 操作")
     col1, col2, col3, col4 = st.columns(4)
 
@@ -198,9 +169,9 @@ else:
             save_state({"request": None, "robot_state": "IDLE"})
             st.rerun()
 
+# ── ログ ──
 st.divider()
 st.markdown("#### 📜 動作ログ")
-
 if os.path.exists(LOG_FILE):
     with open(LOG_FILE, "r", encoding="utf-8") as f:
         logs = json.load(f)
@@ -212,6 +183,7 @@ if os.path.exists(LOG_FILE):
 else:
     st.caption("まだログがありません")
 
+# ── 自動更新 ──
 st.divider()
 auto = st.checkbox("⏱ 3秒ごとに自動更新")
 if auto:
