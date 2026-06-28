@@ -4,6 +4,9 @@
 """
 
 import streamlit as st
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from robot_control.logger import append_log, EventType
 import json, os, time
 from datetime import datetime
 from pathlib import Path
@@ -28,20 +31,17 @@ def save_state(s):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(s, f, ensure_ascii=False, indent=2)
 
-def append_log(s):
-    logs = []
-    if os.path.exists(LOG_FILE):
-        with open(LOG_FILE, "r", encoding="utf-8") as f:
-            logs = json.load(f)
-    logs.append({
-        "時刻":       datetime.now().strftime("%H:%M:%S"),
-        "患者ID":     s.get("patient_id", "—"),
-        "リクエスト": s.get("request", "—"),
-        "キット":     s.get("kit", "—"),
-        "結果":       s.get("robot_state", "—"),
-    })
-    with open(LOG_FILE, "w", encoding="utf-8") as f:
-        json.dump(logs, f, ensure_ascii=False, indent=2)
+def log_event(event_type, s, prev=None, msg=""):
+    append_log(
+        event_type=event_type,
+        patient_id=s.get("patient_id", "—"),
+        request=s.get("request", "—"),
+        kit=s.get("kit", "—"),
+        previous_state=prev or "—",
+        next_state=s.get("robot_state", "—"),
+        result="OK" if "ERROR" not in s.get("robot_state","") else "NG",
+        message=msg,
+    )
 
 STATES = {
     "IDLE":                           ("⬜", "待機中",        "#6b7280"),
@@ -146,7 +146,7 @@ else:
             if st.button(f"▶ 次へ：{next_label}", use_container_width=True):
                 state["robot_state"] = NEXT[rs]
                 if NEXT[rs] == "COMPLETED":
-                    append_log(state)
+                    log_event(EventType.COMPLETED, state, prev=rs, msg="タスク完了")
                 save_state(state)
                 st.rerun()
 
@@ -159,12 +159,14 @@ else:
     with col3:
         if rs == "REQUEST_RECEIVED":
             if st.button("✖ リクエスト取り消し", use_container_width=True):
+                log_event(EventType.CANCEL, state, prev=rs, msg="看護師がキャンセル")
                 save_state({"request": None, "robot_state": "IDLE"})
                 st.rerun()
 
     with col4:
         if rs not in ["COMPLETED", "ERROR", "IDLE"]:
             if st.button("🛑 緊急停止", use_container_width=True):
+                log_event(EventType.EMERGENCY_STOP, state, prev=rs, msg="緊急停止")
                 state["robot_state"] = "ERROR"
                 save_state(state)
                 st.rerun()
