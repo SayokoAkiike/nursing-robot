@@ -4,7 +4,7 @@
 """
 
 import streamlit as st
-import json, os
+import json, os, time
 from datetime import datetime
 
 st.set_page_config(page_title="患者リクエスト", page_icon="🏥", layout="centered")
@@ -79,6 +79,10 @@ if robot_state not in ["IDLE", "COMPLETED", "ERROR"]:
 
     if st.button("🔄 画面を更新する", use_container_width=True):
         st.rerun()
+
+    # 3秒ごとに自動更新
+    time.sleep(3)
+    st.rerun()
 
 elif robot_state == "COMPLETED":
     st.success("✅ 介助が完了しました。ありがとうございました。")
