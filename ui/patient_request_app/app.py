@@ -1,6 +1,9 @@
 import streamlit as st
 import json, os, time
 from datetime import datetime
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from robot_control.logger import append_log, EventType
 from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT_DIR / "data"
