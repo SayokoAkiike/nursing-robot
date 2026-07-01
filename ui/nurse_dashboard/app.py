@@ -10,7 +10,7 @@ STATE_FILE = DATA_DIR / "shared_state.json"
 LOG_FILE   = DATA_DIR / "robot_log.json"
 
 sys.path.insert(0, str(ROOT_DIR))
-from robot_control.state_machine import STATE_LABELS as STATE_MESSAGES, ALLOWED_TRANSITIONS
+from robot_control.state_machine import STATE_LABELS as STATE_MESSAGES, ALLOWED_TRANSITIONS, DISPLAY_FLOW
 from robot_control.logger import append_log, EventType
 from vision.qr_detection.verify_patient_kit import verify
 from ui.common.style import CSS, LABELS
@@ -37,7 +37,7 @@ def log_event(event_type, s, prev=None, msg=""):
         message=msg)
 
 # 遷移ルールはstate_machine.pyのALLOWED_TRANSITIONSを使用
-FLOW = list(ALLOWED_TRANSITIONS.keys()) + ["COMPLETED"]
+FLOW = DISPLAY_FLOW
 RISK_COLOR = {"転倒リスクあり": "High", "要確認": "Check", "なし": "Low"}
 
 col_h1, col_h2 = st.columns([3,1])
