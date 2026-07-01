@@ -9,11 +9,12 @@ sys.path.insert(0, str(ROOT_DIR))
 
 from backend.storage import load_state, save_state, load_logs, append_log_entry
 from backend.schemas import RequestCreate, TransitionRequest, VerifyRequest
-from robot_control.state_machine import RobotState, NORMAL_FLOW
+from robot_control.state_machine import RobotState, NORMAL_FLOW, ALLOWED_TRANSITIONS
 from vision.qr_detection.verify_patient_kit import verify
 
 app = FastAPI(title="PreCare Dock API", version="0.1.0")
 
+# WARNING: 開発・研究用。本番・実機利用時は allow_origins を制限すること
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
     allow_methods=["*"], allow_headers=["*"])
 
@@ -23,16 +24,7 @@ REQUEST_MAP = {
     "nurse_check": {"request": "Nurse check",           "kit": "ALERT_NURSE_ONLY", "risk": "要確認",         "patient_id": "PATIENT_A_ROOM_203"},
 }
 
-NEXT_STATE = {
-    "REQUEST_RECEIVED": "KIT_SELECTED",
-    "KIT_SELECTED": "MOVING_TO_BEDSIDE",
-    "MOVING_TO_BEDSIDE": "VERIFYING_PATIENT",
-    "VERIFYING_PATIENT": "DOCKING",
-    "DOCKING": "TRAY_LIFTING",
-    "TRAY_LIFTING": "WAITING_FOR_NURSE_CONFIRMATION",
-    "WAITING_FOR_NURSE_CONFIRMATION": "KIT_RELEASED",
-    "KIT_RELEASED": "COMPLETED",
-}
+# 遷移ルールは robot_control/state_machine.py の ALLOWED_TRANSITIONS を使用
 
 def log(event_type, state, prev=None, msg=""):
     append_log_entry({
@@ -68,7 +60,7 @@ def create_request(body: RequestCreate):
 def transition(body: TransitionRequest):
     state = load_state()
     current = state.get("robot_state", "IDLE")
-    allowed = NEXT_STATE.get(current)
+    allowed = ALLOWED_TRANSITIONS.get(current)
     if body.next_state == "KIT_RELEASED" and current != "WAITING_FOR_NURSE_CONFIRMATION":
         state["robot_state"] = "ERROR"
         save_state(state)
@@ -88,6 +80,12 @@ def transition(body: TransitionRequest):
 @app.post("/verify")
 def verify_ids(body: VerifyRequest):
     state = load_state()
+    if state.get("robot_state") != "VERIFYING_PATIENT":
+        raise HTTPException(status_code=409, detail="Not in VERIFYING_PATIENT state")
+    if body.patient_id != state.get("patient_id"):
+        raise HTTPException(status_code=400, detail="patient_id mismatch")
+    if body.kit_id != state.get("kit"):
+        raise HTTPException(status_code=400, detail="kit_id mismatch")
     result = verify(body.patient_id, body.kit_id)
     if result["ok"]:
         state["robot_state"] = "DOCKING"

@@ -28,7 +28,7 @@ def save_state(state):
 state = load_state()
 robot_state = state.get("robot_state", "IDLE")
 
-st.markdown(f"## {LABELS["app_patient"]}", unsafe_allow_html=False)
+st.markdown(f"## {LABELS['app_patient']}", unsafe_allow_html=False)
 st.caption(LABELS["room"])
 st.divider()
 

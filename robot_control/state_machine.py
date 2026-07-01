@@ -52,6 +52,17 @@ STATE_MESSAGES = {
 
 
 
+
+# API・UI共通で使う許可遷移マップ（VERIFYING_PATIENT->DOCKINGは/verify経由のみ）
+ALLOWED_TRANSITIONS = {
+    "REQUEST_RECEIVED":               "KIT_SELECTED",
+    "KIT_SELECTED":                   "MOVING_TO_BEDSIDE",
+    "MOVING_TO_BEDSIDE":              "VERIFYING_PATIENT",
+    "DOCKING":                        "TRAY_LIFTING",
+    "TRAY_LIFTING":                   "WAITING_FOR_NURSE_CONFIRMATION",
+    "WAITING_FOR_NURSE_CONFIRMATION": "KIT_RELEASED",
+    "KIT_RELEASED":                   "COMPLETED",
+}
 # 文字列キーでアクセスできるバージョン（UI用）
 STATE_LABELS = {
     "IDLE":                           "待機中",

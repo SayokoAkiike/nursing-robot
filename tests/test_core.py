@@ -14,7 +14,8 @@ def test_verify_ok_toileting():
     assert result["ok"] is True
 
 def test_verify_ng_wrong_kit():
-    result = verify("PATIENT_A_ROOM_203", "ALERT_NURSE_ONLY")
+    # ALERT_NURSE_ONLYはPatient_Aに許可済みなので、別の不正キットでテスト
+    result = verify("PATIENT_A_ROOM_203", "KIT_UNKNOWN")
     assert result["ok"] is False
 
 def test_verify_ng_unknown_patient():
@@ -113,10 +114,44 @@ def test_error_only_allows_reset_to_idle():
 
 def test_qr_ng_result():
     from vision.qr_detection.verify_patient_kit import verify
-    result = verify("PATIENT_A_ROOM_203", "ALERT_NURSE_ONLY")
+    result = verify("PATIENT_A_ROOM_203", "KIT_UNKNOWN")
     assert result["ok"] is False
 
 def test_qr_ok_result():
     from vision.qr_detection.verify_patient_kit import verify
     result = verify("PATIENT_A_ROOM_203", "KIT_TOILETING_A")
     assert result["ok"] is True
+
+
+# ── FastAPI テスト ────────────────────────────────────────
+
+def test_patient_ui_importable():
+    import importlib.util, sys
+    spec = importlib.util.spec_from_file_location(
+        "patient_app", "ui/patient_request_app/app.py")
+    assert spec is not None
+
+def test_backend_storage_json_decode_error(tmp_path):
+    import json
+    from pathlib import Path
+    import backend.storage as storage
+    broken = tmp_path / "broken.json"
+    broken.write_text("NOT JSON", encoding="utf-8")
+    orig = storage.STATE_FILE
+    storage.STATE_FILE = broken
+    result = storage.load_state()
+    assert result == {"request": None, "robot_state": "IDLE"}
+    storage.STATE_FILE = orig
+
+def test_allowed_transitions_no_verifying_to_docking():
+    from robot_control.state_machine import ALLOWED_TRANSITIONS
+    assert "VERIFYING_PATIENT" not in ALLOWED_TRANSITIONS
+
+def test_valid_combinations_nurse_check():
+    from vision.qr_detection.verify_patient_kit import verify
+    result = verify("PATIENT_A_ROOM_203", "ALERT_NURSE_ONLY")
+    assert result["ok"] is True
+
+def test_backend_importable():
+    from backend.main import app
+    assert app is not None
