@@ -51,7 +51,7 @@ RISK_COLOR = {"転倒リスクあり": "High", "要確認": "Check", "なし": "
 
 col_h1, col_h2 = st.columns([3,1])
 with col_h1:
-    st.markdown(f"## {LABELS["app_nurse"]}"))
+    st.markdown("## PreCare Console")
 with col_h2:
     st.caption(datetime.now().strftime("%H:%M:%S"))
 
