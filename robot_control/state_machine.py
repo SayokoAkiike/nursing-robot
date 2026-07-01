@@ -51,6 +51,32 @@ STATE_MESSAGES = {
 }
 
 
+
+
+# API・UI共通で使う許可遷移マップ（VERIFYING_PATIENT->DOCKINGは/verify経由のみ）
+ALLOWED_TRANSITIONS = {
+    "REQUEST_RECEIVED":               "KIT_SELECTED",
+    "KIT_SELECTED":                   "MOVING_TO_BEDSIDE",
+    "MOVING_TO_BEDSIDE":              "VERIFYING_PATIENT",
+    "DOCKING":                        "TRAY_LIFTING",
+    "TRAY_LIFTING":                   "WAITING_FOR_NURSE_CONFIRMATION",
+    "WAITING_FOR_NURSE_CONFIRMATION": "KIT_RELEASED",
+    "KIT_RELEASED":                   "COMPLETED",
+}
+# 文字列キーでアクセスできるバージョン（UI用）
+STATE_LABELS = {
+    "IDLE":                           "待機中",
+    "REQUEST_RECEIVED":               "リクエスト受信",
+    "KIT_SELECTED":                   "キット選択完了",
+    "MOVING_TO_BEDSIDE":              "移動中",
+    "VERIFYING_PATIENT":              "ID照合中",
+    "DOCKING":                        "ドッキング中",
+    "TRAY_LIFTING":                   "トレイ上昇中",
+    "WAITING_FOR_NURSE_CONFIRMATION": "看護師確認待ち",
+    "KIT_RELEASED":                   "キット開放",
+    "COMPLETED":                      "完了",
+    "ERROR":                          "エラー",
+}
 class RobotStateMachine:
     def __init__(self):
         self.state = RobotState.IDLE
