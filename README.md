@@ -1,6 +1,6 @@
-# 🏥 nursing-robot — Bedside Assist Docking Robot (PreCareBot)
+#  nursing-robot — Bedside Assist Docking Robot (PreCareBot)
 
-> 患者の「トイレに行きたい」リクエストを受け取り、看護師が訪室する前にキットをベッドサイドへ届けるロボット。
+> 患者の「トイレに行きたい」リクエストを受け取り、看護師が訪室する前に必要物品キットをベッドサイドへ届けるロボット。
 
 > ⚠️ このプロジェクトは医療機器ではありません。ロボコン・研究・教育目的のプロトタイプです。
 
