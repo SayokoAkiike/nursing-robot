@@ -10,7 +10,7 @@ STATE_FILE = DATA_DIR / "shared_state.json"
 LOG_FILE   = DATA_DIR / "robot_log.json"
 
 sys.path.insert(0, str(ROOT_DIR))
-from robot_control.state_machine import STATE_MESSAGES
+from robot_control.state_machine import STATE_LABELS as STATE_MESSAGES
 from robot_control.logger import append_log, EventType
 from vision.qr_detection.verify_patient_kit import verify
 from ui.common.style import CSS, LABELS
