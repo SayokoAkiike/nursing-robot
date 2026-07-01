@@ -7,18 +7,17 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 STATE_FILE = DATA_DIR / "shared_state.json"
-LOG_FILE   = DATA_DIR / "robot_log.json"
 
 sys.path.insert(0, str(ROOT_DIR))
 from robot_control.logger import append_log, EventType
+from ui.common.style import CSS, LABELS
 
-st.set_page_config(page_title="患者リクエスト", page_icon="🏥", layout="centered")
-
-
+st.set_page_config(page_title=LABELS["app_patient"], layout="centered")
+st.markdown(CSS, unsafe_allow_html=True)
 
 def load_state():
-    if os.path.exists(STATE_FILE):
-        with open(STATE_FILE, "r", encoding="utf-8") as f:
+    if STATE_FILE.exists():
+        with open(STATE_FILE, encoding="utf-8") as f:
             return json.load(f)
     return {"request": None, "robot_state": "IDLE"}
 
@@ -29,56 +28,79 @@ def save_state(state):
 state = load_state()
 robot_state = state.get("robot_state", "IDLE")
 
-st.markdown("## 🏥 203号室　患者 A")
+st.markdown(f"## {LABELS[chr(39)+'app_patient'+chr(39)]}", unsafe_allow_html=False)
+st.caption(LABELS["room"])
+st.divider()
 
 if robot_state not in ["IDLE", "COMPLETED", "ERROR"]:
-    st.warning("⚠️ 立ち上がらずお待ちください / Please do not stand up.")
+    st.markdown(f"""
+<div style="border:1px solid #d0d0d0;border-radius:8px;padding:2rem;text-align:center;background:#fafafa;">
+<p style="font-size:1.3rem;font-weight:600;color:#111;margin-bottom:0.5rem">{LABELS["wait_msg_ja"]}</p>
+<p style="color:#555;font-size:0.95rem;margin-bottom:1rem">{LABELS["wait_msg_en"]}</p>
+<p style="color:#888;font-size:0.85rem">{LABELS["nurse_coming"]}</p>
+</div>""", unsafe_allow_html=True)
+
     req = state.get("request", "")
-    st.info(f"📋 リクエスト中：{req}　｜　🤖 {robot_state}")
+    st.markdown(f"**Request:** {req}")
+    st.caption(f"Status: {robot_state}")
+
     if robot_state == "REQUEST_RECEIVED":
-        if st.button("✖️ リクエストを取り消す", use_container_width=True):
+        if st.button("Cancel request", use_container_width=True):
             save_state({"request": None, "robot_state": "IDLE"})
             st.rerun()
     else:
-        st.caption("※ ロボットが移動中のため取り消しは看護師にお声がけください")
+        st.caption("To cancel, please contact a nurse.")
+
     time.sleep(3)
     st.rerun()
 
 elif robot_state == "COMPLETED":
-    st.success("✅ 介助が完了しました。ありがとうございました。")
-    if st.button("🔄 最初の画面に戻る", use_container_width=True):
+    st.success("Assistance complete. Thank you.")
+    if st.button("Back to home", use_container_width=True):
         save_state({"request": None, "robot_state": "IDLE"})
         st.rerun()
 
 elif robot_state == "ERROR":
-    st.error("🚨 エラーが発生しました。看護師をお呼びください。")
-    if st.button("🔄 リセット", use_container_width=True):
+    st.error("An error occurred. Please contact a nurse.")
+    if st.button("Reset", use_container_width=True):
         save_state({"request": None, "robot_state": "IDLE"})
         st.rerun()
 
 else:
-    st.markdown("### ご用件を選んでください")
+    st.markdown("#### Select your request")
+    st.markdown(" ")
+
     col1, col2, col3 = st.columns(3)
+
     with col1:
-        if st.button("🚽 トイレに行きたい", use_container_width=True, key="toilet"):
-            save_state({"request": "トイレ介助", "kit": "KIT_TOILETING_A",
+        if st.button(LABELS["toileting"], use_container_width=True, key="toileting"):
+            save_state({"request": LABELS["toileting"], "kit": "KIT_TOILETING_A",
                 "patient_id": "PATIENT_A_ROOM_203", "risk": "転倒リスクあり",
                 "robot_state": "REQUEST_RECEIVED", "timestamp": datetime.now().isoformat()})
-            append_log(EventType.REQUEST_CREATED, patient_id="PATIENT_A_ROOM_203", request="トイレ介助", kit="KIT_TOILETING_A", next_state="REQUEST_RECEIVED", message="患者がリクエスト")
+            append_log(EventType.REQUEST_CREATED, patient_id="PATIENT_A_ROOM_203",
+                request=LABELS["toileting"], kit="KIT_TOILETING_A",
+                next_state="REQUEST_RECEIVED", message="Patient request")
             st.rerun()
+
     with col2:
-        if st.button("💧 水がほしい", use_container_width=True, key="water"):
-            save_state({"request": "水の提供", "kit": "KIT_WATER",
+        if st.button(LABELS["water"], use_container_width=True, key="water"):
+            save_state({"request": LABELS["water"], "kit": "KIT_WATER",
                 "patient_id": "PATIENT_A_ROOM_203", "risk": "なし",
                 "robot_state": "REQUEST_RECEIVED", "timestamp": datetime.now().isoformat()})
-            append_log(EventType.REQUEST_CREATED, patient_id="PATIENT_A_ROOM_203", request="水の提供", kit="KIT_WATER", next_state="REQUEST_RECEIVED", message="患者がリクエスト")
+            append_log(EventType.REQUEST_CREATED, patient_id="PATIENT_A_ROOM_203",
+                request=LABELS["water"], kit="KIT_WATER",
+                next_state="REQUEST_RECEIVED", message="Patient request")
             st.rerun()
+
     with col3:
-        if st.button("💉 点滴が気になる", use_container_width=True, key="iv"):
-            save_state({"request": "看護師確認", "kit": "ALERT_NURSE_ONLY",
+        if st.button(LABELS["nurse_check"], use_container_width=True, key="nurse_check"):
+            save_state({"request": LABELS["nurse_check"], "kit": "ALERT_NURSE_ONLY",
                 "patient_id": "PATIENT_A_ROOM_203", "risk": "要確認",
                 "robot_state": "REQUEST_RECEIVED", "timestamp": datetime.now().isoformat()})
-            append_log(EventType.REQUEST_CREATED, patient_id="PATIENT_A_ROOM_203", request="看護師確認", kit="ALERT_NURSE_ONLY", next_state="REQUEST_RECEIVED", message="患者がリクエスト")
+            append_log(EventType.REQUEST_CREATED, patient_id="PATIENT_A_ROOM_203",
+                request=LABELS["nurse_check"], kit="ALERT_NURSE_ONLY",
+                next_state="REQUEST_RECEIVED", message="Patient request")
             st.rerun()
+
     st.divider()
-    st.caption("🔔 ボタンを押すと看護師に通知され、ロボットが準備を開始します")
+    st.caption("Press a button to notify the nurse. The robot will begin preparation.")
