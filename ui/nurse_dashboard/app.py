@@ -11,6 +11,7 @@ LOG_FILE   = DATA_DIR / "robot_log.json"
 
 sys.path.insert(0, str(ROOT_DIR))
 from robot_control.state_machine import STATE_LABELS as STATE_MESSAGES, ALLOWED_TRANSITIONS, DISPLAY_FLOW
+from backend.storage import load_state, save_state as _save_state
 from robot_control.logger import append_log, EventType
 from vision.qr_detection.verify_patient_kit import verify
 from ui.common.style import CSS, LABELS
@@ -18,15 +19,8 @@ from ui.common.style import CSS, LABELS
 st.set_page_config(page_title=LABELS["app_nurse"], layout="wide")
 st.markdown(CSS, unsafe_allow_html=True)
 
-def load_state():
-    if STATE_FILE.exists():
-        with open(STATE_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    return {"request": None, "robot_state": "IDLE"}
-
 def save_state(s):
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(s, f, ensure_ascii=False, indent=2)
+    _save_state(s)
 
 def log_event(event_type, s, prev=None, msg=""):
     append_log(event_type=event_type,

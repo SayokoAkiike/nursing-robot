@@ -26,6 +26,7 @@ def save_state(state: dict):
         tmp.replace(STATE_FILE)
     except OSError as e:
         print(f"[WARN] 状態保存失敗: {e}")
+        raise
 
 def load_logs() -> list:
     if LOG_FILE.exists():
