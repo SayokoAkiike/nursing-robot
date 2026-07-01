@@ -10,7 +10,8 @@ STATE_FILE = DATA_DIR / "shared_state.json"
 LOG_FILE   = DATA_DIR / "robot_log.json"
 
 sys.path.insert(0, str(ROOT_DIR))
-from robot_control.state_machine import STATE_LABELS as STATE_MESSAGES
+from robot_control.state_machine import STATE_LABELS as STATE_MESSAGES, ALLOWED_TRANSITIONS, DISPLAY_FLOW
+from backend.storage import load_state, save_state as _save_state
 from robot_control.logger import append_log, EventType
 from vision.qr_detection.verify_patient_kit import verify
 from ui.common.style import CSS, LABELS
@@ -18,15 +19,8 @@ from ui.common.style import CSS, LABELS
 st.set_page_config(page_title=LABELS["app_nurse"], layout="wide")
 st.markdown(CSS, unsafe_allow_html=True)
 
-def load_state():
-    if STATE_FILE.exists():
-        with open(STATE_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    return {"request": None, "robot_state": "IDLE"}
-
 def save_state(s):
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(s, f, ensure_ascii=False, indent=2)
+    _save_state(s)
 
 def log_event(event_type, s, prev=None, msg=""):
     append_log(event_type=event_type,
@@ -36,17 +30,8 @@ def log_event(event_type, s, prev=None, msg=""):
         result="OK" if "ERROR" not in s.get("robot_state","") else "NG",
         message=msg)
 
-NEXT = {
-    "REQUEST_RECEIVED": "KIT_SELECTED",
-    "KIT_SELECTED": "MOVING_TO_BEDSIDE",
-    "MOVING_TO_BEDSIDE": "VERIFYING_PATIENT",
-    "VERIFYING_PATIENT": "DOCKING",
-    "DOCKING": "TRAY_LIFTING",
-    "TRAY_LIFTING": "WAITING_FOR_NURSE_CONFIRMATION",
-    "WAITING_FOR_NURSE_CONFIRMATION": "KIT_RELEASED",
-    "KIT_RELEASED": "COMPLETED",
-}
-FLOW = list(NEXT.keys()) + ["COMPLETED"]
+# 遷移ルールはstate_machine.pyのALLOWED_TRANSITIONSを使用
+FLOW = DISPLAY_FLOW
 RISK_COLOR = {"転倒リスクあり": "High", "要確認": "Check", "なし": "Low"}
 
 col_h1, col_h2 = st.columns([3,1])
@@ -110,8 +95,8 @@ else:
                 else:
                     log_event(EventType.QR_NG,state,prev=rs,msg=result["message"])
                     state["robot_state"]="ERROR"; save_state(state); st.rerun()
-        elif rs in NEXT:
-            next_s=NEXT[rs]
+        elif rs in ALLOWED_TRANSITIONS:
+            next_s=ALLOWED_TRANSITIONS[rs]
             if st.button(f"Next: {STATE_MESSAGES.get(next_s,next_s)}",use_container_width=True):
                 prev=rs; state["robot_state"]=next_s
                 log_event(EventType.STATE_TRANSITION,state,prev=prev)
