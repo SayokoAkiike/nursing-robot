@@ -37,7 +37,7 @@ def log_event(event_type, s, prev=None, msg=""):
         message=msg)
 
 # 遷移ルールはstate_machine.pyのALLOWED_TRANSITIONSを使用
-FLOW = list(NEXT.keys()) + ["COMPLETED"]
+FLOW = list(ALLOWED_TRANSITIONS.keys()) + ["COMPLETED"]
 RISK_COLOR = {"転倒リスクあり": "High", "要確認": "Check", "なし": "Low"}
 
 col_h1, col_h2 = st.columns([3,1])
