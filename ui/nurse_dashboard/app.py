@@ -10,7 +10,7 @@ STATE_FILE = DATA_DIR / "shared_state.json"
 LOG_FILE   = DATA_DIR / "robot_log.json"
 
 sys.path.insert(0, str(ROOT_DIR))
-from robot_control.state_machine import STATE_LABELS as STATE_MESSAGES
+from robot_control.state_machine import STATE_LABELS as STATE_MESSAGES, ALLOWED_TRANSITIONS
 from robot_control.logger import append_log, EventType
 from vision.qr_detection.verify_patient_kit import verify
 from ui.common.style import CSS, LABELS
@@ -36,16 +36,7 @@ def log_event(event_type, s, prev=None, msg=""):
         result="OK" if "ERROR" not in s.get("robot_state","") else "NG",
         message=msg)
 
-NEXT = {
-    "REQUEST_RECEIVED": "KIT_SELECTED",
-    "KIT_SELECTED": "MOVING_TO_BEDSIDE",
-    "MOVING_TO_BEDSIDE": "VERIFYING_PATIENT",
-    "VERIFYING_PATIENT": "DOCKING",
-    "DOCKING": "TRAY_LIFTING",
-    "TRAY_LIFTING": "WAITING_FOR_NURSE_CONFIRMATION",
-    "WAITING_FOR_NURSE_CONFIRMATION": "KIT_RELEASED",
-    "KIT_RELEASED": "COMPLETED",
-}
+# 遷移ルールはstate_machine.pyのALLOWED_TRANSITIONSを使用
 FLOW = list(NEXT.keys()) + ["COMPLETED"]
 RISK_COLOR = {"転倒リスクあり": "High", "要確認": "Check", "なし": "Low"}
 
@@ -110,8 +101,8 @@ else:
                 else:
                     log_event(EventType.QR_NG,state,prev=rs,msg=result["message"])
                     state["robot_state"]="ERROR"; save_state(state); st.rerun()
-        elif rs in NEXT:
-            next_s=NEXT[rs]
+        elif rs in ALLOWED_TRANSITIONS:
+            next_s=ALLOWED_TRANSITIONS[rs]
             if st.button(f"Next: {STATE_MESSAGES.get(next_s,next_s)}",use_container_width=True):
                 prev=rs; state["robot_state"]=next_s
                 log_event(EventType.STATE_TRANSITION,state,prev=prev)

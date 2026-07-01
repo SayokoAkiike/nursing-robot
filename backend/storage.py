@@ -19,8 +19,13 @@ def load_state() -> dict:
     return {"request": None, "robot_state": "IDLE"}
 
 def save_state(state: dict):
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False, indent=2)
+    try:
+        tmp = STATE_FILE.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+        tmp.replace(STATE_FILE)
+    except OSError as e:
+        print(f"[WARN] 状態保存失敗: {e}")
 
 def load_logs() -> list:
     if LOG_FILE.exists():
