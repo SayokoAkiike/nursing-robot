@@ -53,14 +53,32 @@
 
 ---
 
+## Architecture Status
+
+### Current (this branch)
+- Streamlit UI reads/writes shared_state.json directly
+- FastAPI backend runs as a separate process
+- API enforces safety rules (nurse confirmation, QR verification)
+
+### Next phase
+- Streamlit UI will call FastAPI instead of direct JSON access
+- Full frontend/backend separation
+
 ## Quick Start
 
     pip install -r requirements.txt
-    python -m streamlit run ui/patient_request_app/app.py --server.port 8501
-    python -m streamlit run ui/nurse_dashboard/app.py --server.port 8502
-    pytest tests/ -v
 
----
+    # 1. FastAPI backend (optional but recommended)
+    uvicorn backend.main:app --reload --port 8000
+
+    # 2. Patient UI
+    python -m streamlit run ui/patient_request_app/app.py --server.port 8501
+
+    # 3. Nurse dashboard
+    python -m streamlit run ui/nurse_dashboard/app.py --server.port 8502
+
+    # 4. Tests
+    pytest tests/ -v
 
 ## Roadmap
 
