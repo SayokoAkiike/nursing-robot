@@ -155,3 +155,81 @@ def test_valid_combinations_nurse_check():
 def test_backend_importable():
     from backend.main import app
     assert app is not None
+
+
+# ── FastAPI TestClient テスト ─────────────────────────────
+
+from fastapi.testclient import TestClient
+import backend.storage as storage_mod
+
+NURSE_TOKEN = "precare-dev-token-2026"
+HEADERS = {"x-nurse-token": NURSE_TOKEN}
+
+def get_client(tmp_path):
+    storage_mod.STATE_FILE = tmp_path / "state.json"
+    storage_mod.LOG_FILE = tmp_path / "log.json"
+    from backend.main import app
+    return TestClient(app)
+
+def test_api_get_state(tmp_path):
+    client = get_client(tmp_path)
+    r = client.get("/state")
+    assert r.status_code == 200
+    assert r.json()["robot_state"] == "IDLE"
+
+def test_api_create_request(tmp_path):
+    client = get_client(tmp_path)
+    r = client.post("/requests", json={"request_type": "toileting"})
+    assert r.status_code == 200
+    assert r.json()["robot_state"] == "REQUEST_RECEIVED"
+
+def test_api_unknown_request_type(tmp_path):
+    client = get_client(tmp_path)
+    r = client.post("/requests", json={"request_type": "unknown"})
+    assert r.status_code == 400
+
+def test_api_transition_requires_nurse_token(tmp_path):
+    client = get_client(tmp_path)
+    client.post("/requests", json={"request_type": "toileting"})
+    r = client.post("/transition", json={"next_state": "KIT_SELECTED"})
+    assert r.status_code == 401
+
+def test_api_transition_with_token(tmp_path):
+    client = get_client(tmp_path)
+    client.post("/requests", json={"request_type": "toileting"})
+    r = client.post("/transition", json={"next_state": "KIT_SELECTED"}, headers=HEADERS)
+    assert r.status_code == 200
+    assert r.json()["robot_state"] == "KIT_SELECTED"
+
+def test_api_invalid_transition(tmp_path):
+    client = get_client(tmp_path)
+    client.post("/requests", json={"request_type": "toileting"})
+    r = client.post("/transition", json={"next_state": "COMPLETED"}, headers=HEADERS)
+    assert r.status_code == 400
+
+def test_api_kit_released_without_nurse_confirmation(tmp_path):
+    client = get_client(tmp_path)
+    client.post("/requests", json={"request_type": "toileting"})
+    r = client.post("/transition", json={"next_state": "KIT_RELEASED"}, headers=HEADERS)
+    assert r.status_code == 403
+
+def test_api_emergency_stop(tmp_path):
+    client = get_client(tmp_path)
+    client.post("/requests", json={"request_type": "toileting"})
+    r = client.post("/emergency-stop", headers=HEADERS)
+    assert r.status_code == 200
+    assert r.json()["robot_state"] == "ERROR"
+
+def test_api_reset(tmp_path):
+    client = get_client(tmp_path)
+    client.post("/requests", json={"request_type": "toileting"})
+    client.post("/emergency-stop", headers=HEADERS)
+    r = client.post("/reset", headers=HEADERS)
+    assert r.status_code == 200
+    assert r.json()["robot_state"] == "IDLE"
+
+def test_api_get_logs(tmp_path):
+    client = get_client(tmp_path)
+    r = client.get("/logs")
+    assert r.status_code == 200
+    assert isinstance(r.json(), list)
