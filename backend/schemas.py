@@ -1,8 +1,9 @@
 from pydantic import BaseModel
-from typing import Optional
+from robot_control.config import DEFAULT_PATIENT_ID
 
 class RequestCreate(BaseModel):
-    request_type: str  # toileting / water / nurse_check
+    request_type: str
+    patient_id: str = DEFAULT_PATIENT_ID
 
 class TransitionRequest(BaseModel):
     next_state: str

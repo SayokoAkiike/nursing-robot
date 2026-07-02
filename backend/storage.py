@@ -13,7 +13,6 @@ def load_state() -> dict:
             with open(STATE_FILE, encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, OSError):
-            # ファイル破損時はIDLEにフォールバック
             return {"request": None, "robot_state": "IDLE"}
     return {"request": None, "robot_state": "IDLE"}
 
@@ -46,3 +45,15 @@ def append_log_entry(entry: dict):
         tmp.replace(LOG_FILE)
     except OSError as e:
         print(f"[WARN] ログ保存失敗: {e}")
+
+def load_requests() -> list:
+    state = load_state()
+    if state.get("robot_state", "IDLE") == "IDLE":
+        return []
+    return [state]
+
+def get_request(request_id: str):
+    state = load_state()
+    if state.get("request_id") == request_id:
+        return state
+    return None
