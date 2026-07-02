@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT_DIR))
 
-from robot_control.config import REQUEST_TYPES, DEFAULT_PATIENT_ID
+from robot_control.config import REQUEST_TYPES, DEFAULT_PATIENT_ID, PATIENTS
 from ui.common.style import CSS, LABELS
 from ui.common import api_client
 
@@ -23,7 +23,8 @@ except Exception as e:
 my_task = next((t for t in tasks if t.get("patient_id") == patient_id), None)
 
 st.markdown("## PreCare Request")
-st.caption(LABELS["room"])
+p_info = PATIENTS.get(patient_id, {})
+st.caption(f"Room {p_info.get('room', '?')} — {p_info.get('display_name', patient_id)}")
 st.divider()
 
 if my_task:
