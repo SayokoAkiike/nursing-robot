@@ -44,7 +44,7 @@ PreCareBot は、看護現場の転倒予防を目的とした「安全制約つ
 ---
 
 ## 🏗️ アーキテクチャPatient UI (port 8501)      Nurse Dashboard (port 8502)
-↓ HTTP                         ↓ HTTP
+↓ HTTP
 ui/common/api_client.py
 ↓
 FastAPI Backend (port 8000)
@@ -55,13 +55,15 @@ robot_control/service.py
 ↓
 Storage (JSON → Phase 3 で SQLite へ)
 shared_state.json / robot_log.json
+
 **設計方針**: UI → HTTP → API → Service → Storage の分離により、将来の複数患者・複数ロボット・DBへの移行に対応しやすくしています。
 
 ---
 
 ## 🔄 ステートマシン（10ステップ）IDLE → REQUEST_RECEIVED → KIT_SELECTED → MOVING_TO_BEDSIDE
 → VERIFYING_PATIENT (POST /tasks/{id}/verify でQR照合)
-→ DOCKING → TRAY_LIFTING
+→ DOCKING 
+→ TRAY_LIFTING
 → WAITING_FOR_NURSE_CONFIRMATION
 → KIT_RELEASED → COMPLETEDどの状態からも ERROR へ遷移可能（緊急停止時）。COMPLETED / ERROR からは reset で IDLE へ。
 
