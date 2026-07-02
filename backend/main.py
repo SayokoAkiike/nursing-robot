@@ -7,6 +7,10 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT_DIR))
 
 from backend.schemas import RequestCreate, TransitionRequest, VerifyRequest
+from backend.auth import require_nurse
+from fastapi import Depends
+from backend.auth import require_nurse
+from fastapi import Depends
 from backend.storage import load_logs
 from robot_control import service
 
@@ -28,7 +32,7 @@ def create_request(body: RequestCreate):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/transition")
-def transition(body: TransitionRequest):
+def transition(body: TransitionRequest, _=Depends(require_nurse)):
     try:
         return service.advance_state(body.next_state)
     except ValueError as e:
@@ -36,7 +40,7 @@ def transition(body: TransitionRequest):
         raise HTTPException(status_code=code, detail=str(e))
 
 @app.post("/verify")
-def verify_ids(body: VerifyRequest):
+def verify_ids(body: VerifyRequest, _=Depends(require_nurse)):
     try:
         return service.verify_ids(body.patient_id, body.kit_id)
     except ValueError as e:
@@ -44,15 +48,15 @@ def verify_ids(body: VerifyRequest):
         raise HTTPException(status_code=code, detail=str(e))
 
 @app.post("/emergency-stop")
-def emergency_stop():
+def emergency_stop(_=Depends(require_nurse)):
     return service.emergency_stop()
 
 @app.post("/reset")
-def reset():
+def reset(_=Depends(require_nurse)):
     return service.reset()
 
 @app.post("/cancel")
-def cancel():
+def cancel(_=Depends(require_nurse)):
     return service.cancel_request()
 
 @app.get("/logs")
