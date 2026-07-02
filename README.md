@@ -1,102 +1,98 @@
-#  nursing-robot — Bedside Assist Docking Robot (PreCareBot)
+# PreCareBot — 看護現場の安全制約つきワークフロー（ソフトウェアMVP）
 
-> 患者の「トイレに行きたい」リクエストを受け取り、看護師が訪室する前に必要物品キットをベッドサイドへ届けるロボット。
+[![pytest](https://github.com/SayokoAkiike/nursing-robot/actions/workflows/pytest.yml/badge.svg?branch=phase1-phase2)](https://github.com/SayokoAkiike/nursing-robot/actions/workflows/pytest.yml)
 
-> ⚠️ このプロジェクトは医療機器ではありません。ロボコン・研究・教育目的のプロトタイプです。
+> **Software-only prototype — not a medical device, not for production use.**
+
+PreCareBot は、看護現場の転倒予防を目的とした「安全制約つきベッドサイドアシストロボット」の**ソフトウェアMVP**です。
+物理ロボットは実装しておらず、患者リクエスト受信・キット配送・QR照合・看護師確認というワークフローを、ステートマシンとREST APIで設計・実装しています。
 
 ---
 
-## 🎯 Problem
+## 🎯 解決する問題
 
 病院でナースコールから看護師到着まで数分かかる間に、患者が一人で立ち上がろうとして転倒するリスクがある。
 
-## 💡 Solution
-
-看護師が訪室するより先にロボットがキットを届け、患者画面に「立ち上がらずお待ちください」と表示する。
+**設計アプローチ**: 看護師が訪室するより先にロボットがキットを届け、患者画面に「立ち上がらずお待ちください」と表示する。キットは看護師が確認・承認するまで開放しない（安全制約）。
 
 ---
 
-## 🚧 Safety Boundary
-
-| やること | やらないこと |
-|---------|------------|
-| 患者リクエストの受信 | 患者の身体を支える |
-| キットのベッドサイドへの配送 | 移乗・立たせる |
-| QRで患者ID・キットIDを照合 | 点滴・薬剤に触れる |
-| 看護師確認後にキットを開放 | 医療判断をする |
-
-詳細 → [docs/safety.md](docs/safety.md)
-
----
-
-## 現在実装済み
+## 📦 現在実装済み
 
 | 機能 | ファイル | 状態 |
 |------|---------|------|
-| 患者リクエストUI | ui/patient_request_app/app.py | 完了 |
-| 看護師ダッシュボード | ui/nurse_dashboard/app.py | 完了 |
-| QRコード生成・読み取り・照合 | vision/qr_detection/ | 完了 |
-| ロボット状態遷移 | robot_control/state_machine.py | 完了 |
-| ログ管理 | robot_control/logger.py | 完了 |
-| pytest テスト（38件） | tests/test_core.py | 完了 |
+| 患者リクエストUI | `ui/patient_request_app/app.py` | ✅ |
+| 看護師ダッシュボード | `ui/nurse_dashboard/app.py` | ✅ |
+| REST API (FastAPI) | `backend/main.py` | ✅ |
+| ワークフロー・ステートマシン | `robot_control/state_machine.py` | ✅ |
+| サービス層 | `robot_control/service.py` | ✅ |
+| QRコード生成・照合 | `vision/qr_detection/` | ✅ |
+| イベントログ | `robot_control/logger.py` | ✅ |
+| pytest テスト（38件） | `tests/test_core.py` | ✅ |
+
+## ❌ 未実装（今後の予定）
+
+| 機能 | 予定フェーズ |
+|------|------------|
+| SQLite / DB移行（現在: JSONファイル） | Phase 3 |
+| PyBullet 病室シミュレーション | Phase 3 |
+| カメラQRリアルタイムスキャン | Phase 3 |
+| 複数同時リクエスト対応 | Phase 3 |
+| 物理ロボット制御・ナビゲーション | Phase 4 |
+| マルチロボット・複数病棟対応 | Phase 5 |
+
 
 ---
 
-## 今後実装予定
+## 🚀 Quick Start
 
-| 機能 | フェーズ |
-|------|---------|
-| PyBullet 病室シミュレーション | Day 13〜18 |
-| 実機MVP（台車・トレイ・緊急停止） | Day 21〜40 |
-| LeRobotデータセット収集・公開 | Day 41〜55 |
-| FastAPI + Next.js UI刷新 | Day 41〜 |
+```bash
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn backend.main:app --reload --port 8000
+python -m streamlit run ui/patient_request_app/app.py --server.port 8501
+python -m streamlit run ui/nurse_dashboard/app.py --server.port 8502
+pytest tests/ -v
+```
 
 ---
 
-## Architecture Status
+## 🔌 API エンドポイント
 
-### Current (this branch)
-- Streamlit UI reads/writes shared_state.json directly
-- FastAPI backend runs as a separate process
-- API enforces safety rules (nurse confirmation, QR verification)
+| Method | Path | 認証 | 説明 |
+|--------|------|------|------|
+| GET | `/requests` | - | リクエスト一覧 |
+| POST | `/requests` | - | 患者リクエスト作成 |
+| POST | `/requests/{id}/cancel` | - | 患者キャンセル |
+| POST | `/tasks/{id}/transition` | 🔒 | 状態遷移 |
+| POST | `/tasks/{id}/verify` | 🔒 | QR照合 |
+| POST | `/tasks/{id}/emergency-stop` | 🔒 | 緊急停止 |
+| POST | `/tasks/{id}/reset` | 🔒 | リセット |
+| POST | `/tasks/{id}/cancel` | 🔒 | 看護師キャンセル |
+| GET | `/logs` | - | ログ |
 
-### Next phase
-- Streamlit UI will call FastAPI instead of direct JSON access
-- Full frontend/backend separation
+🔒 = x-nurse-token ヘッダー必須
 
-## Quick Start
+---
 
-    pip install -r requirements.txt
+## ⚠️ Current Limitations
 
-    # 1. FastAPI backend (optional but recommended)
-    uvicorn backend.main:app --reload --port 8000
+- シングルリクエスト制約（同時1件のみ）
+- JSON ファイルストレージ（並列アクセス非対応、Phase 3 で SQLite 予定）
+- QR照合はダッシュボード上でシミュレート
+- 物理制御・ナビゲーションは未実装
+- 本プロトタイプは医療機器ではありません
 
-    # 2. Patient UI
-    python -m streamlit run ui/patient_request_app/app.py --server.port 8501
+---
 
-    # 3. Nurse dashboard
-    python -m streamlit run ui/nurse_dashboard/app.py --server.port 8502
+## 📋 Roadmap
 
-    # 4. Tests
-    pytest tests/ -v
-
-# API（x-nurse-tokenが必要）
-# GET  /state
-# POST /requests
-# POST /transition  ← x-nurse-token必須
-# POST /verify      ← x-nurse-token必須
-# POST /emergency-stop ← x-nurse-token必須
-# POST /reset       ← x-nurse-token必須
-# POST /cancel      ← x-nurse-token必須
-# GET  /logs
-
-## Roadmap
-
-| フェーズ | 期間 | 内容 | 状態 |
-|---------|------|------|------|
-| Phase 1 | Day 1〜20 | ソフト基盤・UI・QR・PyBullet入門 | 進行中 |
-| Phase 2 | Day 21〜40 | 実機MVP | 予定 |
-| Phase 3 | Day 41〜60 | LeRobot・HF公開・模倣学習 | 予定 |
+| フェーズ | 内容 | 状態 |
+|---------|------|------|
+| Phase 1–2 | API設計・UI分離・ステートマシン・pytest 38件 | ✅ |
+| Phase 3 | SQLite移行・複数リクエスト・CI整備 | 🔨 |
+| Phase 4 | PyBullet シミュレーション | 📋 |
+| Phase 5 | 実機MVP・LeRobot | 📋 |
 
 ---
 

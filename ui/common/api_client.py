@@ -52,7 +52,7 @@ def reset_task(request_id):
     return r.json()
 
 def nurse_cancel(request_id):
-    r = requests.post(f"{API_BASE_URL}/cancel",
+    r = requests.post(f"{API_BASE_URL}/tasks/{request_id}/cancel",
         headers=_nurse_headers(), timeout=_TIMEOUT)
     r.raise_for_status()
     return r.json()

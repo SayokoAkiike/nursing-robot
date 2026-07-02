@@ -2,7 +2,7 @@ name: pytest
 
 on:
   push:
-    branches: [ main, 'fix_*', 'feature/*', 'refactor/*' ]
+    branches: [ main, 'phase1-phase2', 'fix_*', 'feature/*', 'refactor/*', 'improve/*' ]
   pull_request:
     branches: [ main ]
 
