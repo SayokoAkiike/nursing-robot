@@ -22,3 +22,4 @@ vision/qr_detection/qr_images/
 # OS
 .DS_Store
 .venv/
+.env

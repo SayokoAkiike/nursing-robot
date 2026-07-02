@@ -4,35 +4,25 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-DATA_DIR = ROOT_DIR / "data"
-DATA_DIR.mkdir(exist_ok=True)
-STATE_FILE = DATA_DIR / "shared_state.json"
-LOG_FILE   = DATA_DIR / "robot_log.json"
-
 sys.path.insert(0, str(ROOT_DIR))
+
 from robot_control.state_machine import STATE_LABELS as STATE_MESSAGES, ALLOWED_TRANSITIONS, DISPLAY_FLOW
-from backend.storage import load_state, save_state as _save_state
-from robot_control.logger import append_log, EventType
-from vision.qr_detection.verify_patient_kit import verify
+from robot_control import service
+from backend.storage import load_state, load_logs
 from ui.common.style import CSS, LABELS
 
 st.set_page_config(page_title=LABELS["app_nurse"], layout="wide")
 st.markdown(CSS, unsafe_allow_html=True)
 
-def save_state(s):
-    _save_state(s)
+def log_and_rerun(fn, *args, **kwargs):
+    try:
+        fn(*args, **kwargs)
+    except ValueError as e:
+        st.error(f"Error: {e}")
+    st.rerun()
 
-def log_event(event_type, s, prev=None, msg=""):
-    append_log(event_type=event_type,
-        patient_id=s.get("patient_id","—"), request=s.get("request","—"),
-        kit=s.get("kit","—"), previous_state=prev or "—",
-        next_state=s.get("robot_state","—"),
-        result="OK" if "ERROR" not in s.get("robot_state","") else "NG",
-        message=msg)
-
-# 遷移ルールはstate_machine.pyのALLOWED_TRANSITIONSを使用
-FLOW = DISPLAY_FLOW
-RISK_COLOR = {"転倒リスクあり": "High", "要確認": "Check", "なし": "Low"}
+state = load_state()
+rs = state.get("robot_state", "IDLE")
 
 col_h1, col_h2 = st.columns([3,1])
 with col_h1:
@@ -40,21 +30,18 @@ with col_h1:
 with col_h2:
     st.caption(datetime.now().strftime("%H:%M:%S"))
 
-state = load_state()
-rs = state.get("robot_state", "IDLE")
-
 steps_html = ""
-for s in FLOW:
+for s in DISPLAY_FLOW:
     sl = STATE_MESSAGES.get(s, s)
-    done = FLOW.index(s) <= FLOW.index(rs) if rs in FLOW else False
+    done = DISPLAY_FLOW.index(s) <= DISPLAY_FLOW.index(rs) if rs in DISPLAY_FLOW else False
     active = s == rs
     dot = "background:#111;" if active else ("background:#ccc;" if done else "background:#eee;")
     lbl = "color:#111;font-weight:600;" if active else "color:#aaa;"
-    steps_html += (f"<div style='display:inline-flex;flex-direction:column;align-items:center;gap:3px;min-width:72px'>"
-        f"<div style='width:10px;height:10px;border-radius:50%;{dot}'></div>"
-        f"<span style='font-size:9px;{lbl}'>{sl}</span></div>")
+    steps_html += (f"<div style='display:inline-flex;flex-direction:column;align-items:center;gap:3px;min-width:72px'>"        f"<div style='width:10px;height:10px;border-radius:50%;{dot}'></div>"        f"<span style='font-size:9px;{lbl}'>{sl}</span></div>")
 
 st.markdown(f"<div style='background:#f7f7f7;border-radius:6px;padding:12px 16px;margin-bottom:16px;overflow-x:auto;white-space:nowrap;'><div style='display:flex;gap:4px;'>{steps_html}</div></div>", unsafe_allow_html=True)
+
+RISK_COLOR = {"転倒リスクあり": "High", "要確認": "Check", "なし": "Low"}
 
 if rs == "IDLE":
     st.markdown("<p style='color:#888;padding:2rem 0'>Waiting for patient request.</p>", unsafe_allow_html=True)
@@ -82,62 +69,44 @@ else:
     with col1:
         if rs=="WAITING_FOR_NURSE_CONFIRMATION":
             if st.button("Release kit",use_container_width=True,type="primary"):
-                prev=rs; state["robot_state"]="KIT_RELEASED"
-                log_event(EventType.STATE_TRANSITION,state,prev=prev,msg="Nurse confirmed")
-                save_state(state); st.rerun()
+                log_and_rerun(service.advance_state, "KIT_RELEASED")
         elif rs=="VERIFYING_PATIENT":
             if st.button("Verify and dock",use_container_width=True):
-                result=verify(state.get("patient_id",""),state.get("kit",""))
-                if result["ok"]:
-                    prev=rs; state["robot_state"]="DOCKING"
-                    log_event(EventType.QR_OK,state,prev=prev,msg=result["message"])
-                    save_state(state); st.rerun()
-                else:
-                    log_event(EventType.QR_NG,state,prev=rs,msg=result["message"])
-                    state["robot_state"]="ERROR"; save_state(state); st.rerun()
+                result = service.verify_ids(pid, kit)
+                if not result.get("ok", True):
+                    st.error("QR verification failed")
+                st.rerun()
         elif rs in ALLOWED_TRANSITIONS:
             next_s=ALLOWED_TRANSITIONS[rs]
             if st.button(f"Next: {STATE_MESSAGES.get(next_s,next_s)}",use_container_width=True):
-                prev=rs; state["robot_state"]=next_s
-                log_event(EventType.STATE_TRANSITION,state,prev=prev)
-                if next_s=="COMPLETED":
-                    log_event(EventType.COMPLETED,state,prev=prev,msg="Task completed")
-                save_state(state); st.rerun()
+                log_and_rerun(service.advance_state, next_s)
 
     with col2:
         if rs=="COMPLETED":
             if st.button("Reset",use_container_width=True):
-                log_event(EventType.RESET,state,prev=rs,msg="Reset")
-                save_state({"request":None,"robot_state":"IDLE"}); st.rerun()
+                log_and_rerun(service.reset)
 
     with col3:
         if rs=="REQUEST_RECEIVED":
             if st.button("Cancel request",use_container_width=True):
-                log_event(EventType.CANCEL,state,prev=rs,msg="Nurse cancelled")
-                save_state({"request":None,"robot_state":"IDLE"}); st.rerun()
+                log_and_rerun(service.cancel_request)
 
     with col4:
         if rs not in ["COMPLETED","ERROR","IDLE"]:
             if st.button("Emergency stop",use_container_width=True):
-                log_event(EventType.EMERGENCY_STOP,state,prev=rs,msg="Emergency stop")
-                state["robot_state"]="ERROR"; save_state(state); st.rerun()
+                log_and_rerun(service.emergency_stop)
 
     if rs=="ERROR":
         st.error("Error detected. Please confirm the situation and reset.")
         if st.button("Reset",use_container_width=True,key="reset_error"):
-            log_event(EventType.RESET,state,prev=rs,msg="Reset from ERROR")
-            save_state({"request":None,"robot_state":"IDLE"}); st.rerun()
+            log_and_rerun(service.reset)
 
 st.divider()
 st.markdown("#### Log")
-if LOG_FILE.exists():
-    with open(LOG_FILE,encoding="utf-8") as f:
-        logs=json.load(f)
-    if logs:
-        import pandas as pd
-        st.dataframe(pd.DataFrame(logs[::-1]),use_container_width=True,height=200)
-    else:
-        st.caption("No logs yet.")
+logs = load_logs()
+if logs:
+    import pandas as pd
+    st.dataframe(pd.DataFrame(logs[::-1]),use_container_width=True,height=200)
 else:
     st.caption("No logs yet.")
 

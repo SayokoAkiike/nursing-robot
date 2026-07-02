@@ -10,6 +10,7 @@ STATE_FILE = DATA_DIR / "shared_state.json"
 
 sys.path.insert(0, str(ROOT_DIR))
 from robot_control.logger import append_log, EventType
+from robot_control.config import REQUEST_TYPES, DEFAULT_PATIENT_ID
 from ui.common.style import CSS, LABELS
 
 st.set_page_config(page_title=LABELS["app_patient"], layout="centered")
@@ -72,35 +73,22 @@ else:
 
     col1, col2, col3 = st.columns(3)
 
-    with col1:
-        if st.button(LABELS["toileting"], use_container_width=True, key="toileting"):
-            save_state({"request": LABELS["toileting"], "kit": "KIT_TOILETING_A",
-                "patient_id": "PATIENT_A_ROOM_203", "risk": "転倒リスクあり",
-                "robot_state": "REQUEST_RECEIVED", "timestamp": datetime.now().isoformat()})
-            append_log(EventType.REQUEST_CREATED, patient_id="PATIENT_A_ROOM_203",
-                request=LABELS["toileting"], kit="KIT_TOILETING_A",
-                next_state="REQUEST_RECEIVED", message="Patient request")
-            st.rerun()
-
-    with col2:
-        if st.button(LABELS["water"], use_container_width=True, key="water"):
-            save_state({"request": LABELS["water"], "kit": "KIT_WATER",
-                "patient_id": "PATIENT_A_ROOM_203", "risk": "なし",
-                "robot_state": "REQUEST_RECEIVED", "timestamp": datetime.now().isoformat()})
-            append_log(EventType.REQUEST_CREATED, patient_id="PATIENT_A_ROOM_203",
-                request=LABELS["water"], kit="KIT_WATER",
-                next_state="REQUEST_RECEIVED", message="Patient request")
-            st.rerun()
-
-    with col3:
-        if st.button(LABELS["nurse_check"], use_container_width=True, key="nurse_check"):
-            save_state({"request": LABELS["nurse_check"], "kit": "ALERT_NURSE_ONLY",
-                "patient_id": "PATIENT_A_ROOM_203", "risk": "要確認",
-                "robot_state": "REQUEST_RECEIVED", "timestamp": datetime.now().isoformat()})
-            append_log(EventType.REQUEST_CREATED, patient_id="PATIENT_A_ROOM_203",
-                request=LABELS["nurse_check"], kit="ALERT_NURSE_ONLY",
-                next_state="REQUEST_RECEIVED", message="Patient request")
-            st.rerun()
+    cols = st.columns(len(REQUEST_TYPES))
+    for col, (req_key, req_val) in zip(cols, REQUEST_TYPES.items()):
+        with col:
+            if st.button(req_val["label"], use_container_width=True, key=req_key):
+                save_state({
+                    "request":      req_val["label"],
+                    "kit":          req_val["kit"],
+                    "patient_id":   DEFAULT_PATIENT_ID,
+                    "risk":         req_val["risk"],
+                    "robot_state":  "REQUEST_RECEIVED",
+                    "timestamp":    datetime.now().isoformat(),
+                })
+                append_log(EventType.REQUEST_CREATED, patient_id=DEFAULT_PATIENT_ID,
+                    request=req_val["label"], kit=req_val["kit"],
+                    next_state="REQUEST_RECEIVED", message="Patient request")
+                st.rerun()
 
     st.divider()
     st.caption("Press a button to notify the nurse. The robot will begin preparation.")
