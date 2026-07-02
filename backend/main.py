@@ -18,10 +18,16 @@ app = FastAPI(title="PreCare Dock API", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
     allow_methods=["*"], allow_headers=["*"])
 
+from robot_control.config import REQUEST_TYPES, DEFAULT_PATIENT_ID
+
 REQUEST_MAP = {
-    "toileting":   {"request": "Toileting preparation", "kit": "KIT_TOILETING_A", "risk": "転倒リスクあり", "patient_id": "PATIENT_A_ROOM_203"},
-    "water":       {"request": "Water request",         "kit": "KIT_WATER",        "risk": "なし",           "patient_id": "PATIENT_A_ROOM_203"},
-    "nurse_check": {"request": "Nurse check",           "kit": "ALERT_NURSE_ONLY", "risk": "要確認",         "patient_id": "PATIENT_A_ROOM_203"},
+    k: {
+        "request":    v["label"],
+        "kit":        v["kit"],
+        "risk":       v["risk"],
+        "patient_id": DEFAULT_PATIENT_ID,
+    }
+    for k, v in REQUEST_TYPES.items()
 }
 
 # 遷移ルールは robot_control/state_machine.py の ALLOWED_TRANSITIONS を使用
