@@ -19,6 +19,7 @@ def log_and_rerun(fn, *args, **kwargs):
         fn(*args, **kwargs)
     except ValueError as e:
         st.error(f"Error: {e}")
+        return
     st.rerun()
 
 state = load_state()
@@ -72,10 +73,7 @@ else:
                 log_and_rerun(service.advance_state, "KIT_RELEASED")
         elif rs=="VERIFYING_PATIENT":
             if st.button("Verify and dock",use_container_width=True):
-                result = service.verify_ids(pid, kit)
-                if not result.get("ok", True):
-                    st.error("QR verification failed")
-                st.rerun()
+                log_and_rerun(service.verify_ids, pid, kit)
         elif rs in ALLOWED_TRANSITIONS:
             next_s=ALLOWED_TRANSITIONS[rs]
             if st.button(f"Next: {STATE_MESSAGES.get(next_s,next_s)}",use_container_width=True):

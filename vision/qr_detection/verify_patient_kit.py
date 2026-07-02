@@ -1,10 +1,4 @@
-from robot_control.config import PATIENTS
-
-KIT_NAMES = {
-    "KIT_TOILETING_A":  "Toileting preparation kit",
-    "KIT_WATER":        "Water kit",
-    "ALERT_NURSE_ONLY": "Nurse check only",
-}
+from robot_control.config import PATIENTS, KIT_NAMES
 
 def verify(patient_id: str, kit_id: str) -> dict:
     kit_name = KIT_NAMES.get(kit_id, kit_id)

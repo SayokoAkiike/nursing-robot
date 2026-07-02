@@ -9,8 +9,6 @@ sys.path.insert(0, str(ROOT_DIR))
 from backend.schemas import RequestCreate, TransitionRequest, VerifyRequest
 from backend.auth import require_nurse
 from fastapi import Depends
-from backend.auth import require_nurse
-from fastapi import Depends
 from backend.storage import load_logs
 from robot_control import service
 
@@ -57,7 +55,10 @@ def reset(_=Depends(require_nurse)):
 
 @app.post("/cancel")
 def cancel(_=Depends(require_nurse)):
-    return service.cancel_request()
+    try:
+        return service.cancel_request()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/logs")
 def get_logs():

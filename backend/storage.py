@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-from datetime import datetime
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT_DIR / "data"

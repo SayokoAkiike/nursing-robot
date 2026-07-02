@@ -38,7 +38,7 @@
 | QRコード生成・読み取り・照合 | vision/qr_detection/ | 完了 |
 | ロボット状態遷移 | robot_control/state_machine.py | 完了 |
 | ログ管理 | robot_control/logger.py | 完了 |
-| pytest テスト（9件） | tests/test_core.py | 完了 |
+| pytest テスト（38件） | tests/test_core.py | 完了 |
 
 ---
 
@@ -79,6 +79,16 @@
 
     # 4. Tests
     pytest tests/ -v
+
+# API（x-nurse-tokenが必要）
+# GET  /state
+# POST /requests
+# POST /transition  ← x-nurse-token必須
+# POST /verify      ← x-nurse-token必須
+# POST /emergency-stop ← x-nurse-token必須
+# POST /reset       ← x-nurse-token必須
+# POST /cancel      ← x-nurse-token必須
+# GET  /logs
 
 ## Roadmap
 

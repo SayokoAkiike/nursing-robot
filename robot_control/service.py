@@ -105,9 +105,13 @@ def reset() -> dict:
     return new_state
 
 
+CANCELLABLE_STATES = {"REQUEST_RECEIVED", "KIT_SELECTED"}
+
 def cancel_request() -> dict:
     state = load_state()
     prev = state.get("robot_state", "IDLE")
+    if prev not in CANCELLABLE_STATES:
+        raise ValueError(f"Cannot cancel from state: {prev}")
     new_state = {"request": None, "robot_state": "IDLE"}
     save_state(new_state)
     append_log(EventType.CANCEL, patient_id=state.get("patient_id", "—"),
