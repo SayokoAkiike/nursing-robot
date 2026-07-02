@@ -1,31 +1,32 @@
-import json
-from datetime import datetime
+import sys
 from pathlib import Path
+from datetime import datetime
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT_DIR / "data"
-DATA_DIR.mkdir(exist_ok=True)
-LOG_FILE = DATA_DIR / "robot_log.json"
+sys.path.insert(0, str(ROOT_DIR))
+from backend.storage import append_log_entry
 
-def append_log(event_type, patient_id="—", request="—", kit="—",
-               previous_state="—", next_state="—", result="—", message=""):
-    logs = []
-    if LOG_FILE.exists():
-        with open(LOG_FILE, encoding="utf-8") as f:
-            logs = json.load(f)
-    logs.append({
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "event_type": event_type,
-        "patient_id": patient_id,
-        "request": request,
-        "kit": kit,
+def append_log(
+    event_type: str,
+    patient_id: str = "—",
+    request: str = "—",
+    kit: str = "—",
+    previous_state: str = "—",
+    next_state: str = "—",
+    result: str = "—",
+    message: str = "",
+):
+    append_log_entry({
+        "timestamp":      datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "event_type":     event_type,
+        "patient_id":     patient_id,
+        "request":        request,
+        "kit":            kit,
         "previous_state": previous_state,
-        "next_state": next_state,
-        "result": result,
-        "message": message,
+        "next_state":     next_state,
+        "result":         result,
+        "message":        message,
     })
-    with open(LOG_FILE, "w", encoding="utf-8") as f:
-        json.dump(logs, f, ensure_ascii=False, indent=2)
 
 class EventType:
     REQUEST_CREATED  = "REQUEST_CREATED"

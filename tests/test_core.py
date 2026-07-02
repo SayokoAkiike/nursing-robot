@@ -233,3 +233,111 @@ def test_api_get_logs(tmp_path):
     r = client.get("/logs")
     assert r.status_code == 200
     assert isinstance(r.json(), list)
+
+
+# ── service層テスト ───────────────────────────────────────
+
+def test_service_create_request_ok(tmp_path):
+    import backend.storage as s
+    s.STATE_FILE = tmp_path / "state.json"
+    s.LOG_FILE = tmp_path / "log.json"
+    from robot_control import service
+    result = service.create_request("toileting")
+    assert result["robot_state"] == "REQUEST_RECEIVED"
+    assert result["kit"] == "KIT_TOILETING_A"
+
+def test_service_create_request_while_in_progress(tmp_path):
+    import backend.storage as s
+    s.STATE_FILE = tmp_path / "state.json"
+    s.LOG_FILE = tmp_path / "log.json"
+    from robot_control import service
+    service.create_request("toileting")
+    try:
+        service.create_request("water")
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "in progress" in str(e)
+
+def test_service_cancel_from_request_received(tmp_path):
+    import backend.storage as s
+    s.STATE_FILE = tmp_path / "state.json"
+    s.LOG_FILE = tmp_path / "log.json"
+    from robot_control import service
+    service.create_request("toileting")
+    result = service.cancel_request()
+    assert result["robot_state"] == "IDLE"
+
+def test_service_cancel_from_kit_selected(tmp_path):
+    import backend.storage as s
+    s.STATE_FILE = tmp_path / "state.json"
+    s.LOG_FILE = tmp_path / "log.json"
+    from robot_control import service
+    service.create_request("toileting")
+    service.advance_state("KIT_SELECTED")
+    result = service.cancel_request()
+    assert result["robot_state"] == "IDLE"
+
+def test_service_cancel_from_moving_fails(tmp_path):
+    import backend.storage as s
+    s.STATE_FILE = tmp_path / "state.json"
+    s.LOG_FILE = tmp_path / "log.json"
+    from robot_control import service
+    service.create_request("toileting")
+    service.advance_state("KIT_SELECTED")
+    service.advance_state("MOVING_TO_BEDSIDE")
+    try:
+        service.cancel_request()
+        assert False, "Should have raised ValueError"
+    except ValueError as e:
+        assert "Cannot cancel" in str(e)
+
+def test_service_verify_ids_ok(tmp_path):
+    import backend.storage as s
+    s.STATE_FILE = tmp_path / "state.json"
+    s.LOG_FILE = tmp_path / "log.json"
+    from robot_control import service
+    service.create_request("toileting")
+    for state in ["KIT_SELECTED", "MOVING_TO_BEDSIDE", "VERIFYING_PATIENT"]:
+        service.advance_state(state)
+    result = service.verify_ids("PATIENT_A_ROOM_203", "KIT_TOILETING_A")
+    assert result["ok"] is True
+
+def test_service_verify_ids_fail(tmp_path):
+    import backend.storage as s
+    s.STATE_FILE = tmp_path / "state.json"
+    s.LOG_FILE = tmp_path / "log.json"
+    from robot_control import service
+    service.create_request("toileting")
+    for state in ["KIT_SELECTED", "MOVING_TO_BEDSIDE", "VERIFYING_PATIENT"]:
+        service.advance_state(state)
+    try:
+        service.verify_ids("PATIENT_B_ROOM_204", "KIT_TOILETING_A")
+        assert False, "Should have raised ValueError"
+    except ValueError:
+        pass
+
+def test_api_cancel_ok(tmp_path):
+    import backend.storage as storage_mod
+    storage_mod.STATE_FILE = tmp_path / "state.json"
+    storage_mod.LOG_FILE = tmp_path / "log.json"
+    from backend.main import app
+    from fastapi.testclient import TestClient
+    client = TestClient(app)
+    client.post("/requests", json={"request_type": "toileting"})
+    r = client.post("/cancel", headers={"x-nurse-token": "precare-dev-token-2026"})
+    assert r.status_code == 200
+    assert r.json()["robot_state"] == "IDLE"
+
+def test_api_cancel_from_moving_fails(tmp_path):
+    import backend.storage as storage_mod
+    storage_mod.STATE_FILE = tmp_path / "state.json"
+    storage_mod.LOG_FILE = tmp_path / "log.json"
+    from backend.main import app
+    from fastapi.testclient import TestClient
+    client = TestClient(app)
+    HEADERS = {"x-nurse-token": "precare-dev-token-2026"}
+    client.post("/requests", json={"request_type": "toileting"})
+    client.post("/transition", json={"next_state": "KIT_SELECTED"}, headers=HEADERS)
+    client.post("/transition", json={"next_state": "MOVING_TO_BEDSIDE"}, headers=HEADERS)
+    r = client.post("/cancel", headers=HEADERS)
+    assert r.status_code == 400

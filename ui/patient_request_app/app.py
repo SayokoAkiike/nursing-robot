@@ -1,35 +1,23 @@
 import streamlit as st
-import json, os, time, sys
+import time, sys
 from datetime import datetime
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-DATA_DIR = ROOT_DIR / "data"
-DATA_DIR.mkdir(exist_ok=True)
-STATE_FILE = DATA_DIR / "shared_state.json"
-
 sys.path.insert(0, str(ROOT_DIR))
-from robot_control.logger import append_log, EventType
-from robot_control.config import REQUEST_TYPES, DEFAULT_PATIENT_ID
+
+from backend.storage import load_state
+from robot_control import service
+from robot_control.config import REQUEST_TYPES
 from ui.common.style import CSS, LABELS
 
 st.set_page_config(page_title=LABELS["app_patient"], layout="centered")
 st.markdown(CSS, unsafe_allow_html=True)
 
-def load_state():
-    if STATE_FILE.exists():
-        with open(STATE_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    return {"request": None, "robot_state": "IDLE"}
-
-def save_state(state):
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False, indent=2)
-
 state = load_state()
 robot_state = state.get("robot_state", "IDLE")
 
-st.markdown(f"## {LABELS['app_patient']}", unsafe_allow_html=False)
+st.markdown("## PreCare Request")
 st.caption(LABELS["room"])
 st.divider()
 
@@ -45,9 +33,13 @@ if robot_state not in ["IDLE", "COMPLETED", "ERROR"]:
     st.markdown(f"**Request:** {req}")
     st.caption(f"Status: {robot_state}")
 
-    if robot_state == "REQUEST_RECEIVED":
+    if robot_state in {"REQUEST_RECEIVED", "KIT_SELECTED"}:
         if st.button("Cancel request", use_container_width=True):
-            save_state({"request": None, "robot_state": "IDLE"})
+            try:
+                service.cancel_request()
+            except ValueError as e:
+                st.error(f"Error: {e}")
+                st.stop()
             st.rerun()
     else:
         st.caption("To cancel, please contact a nurse.")
@@ -58,36 +50,25 @@ if robot_state not in ["IDLE", "COMPLETED", "ERROR"]:
 elif robot_state == "COMPLETED":
     st.success("Assistance complete. Thank you.")
     if st.button("Back to home", use_container_width=True):
-        save_state({"request": None, "robot_state": "IDLE"})
+        service.reset()
         st.rerun()
 
 elif robot_state == "ERROR":
     st.error("An error occurred. Please contact a nurse.")
-    if st.button("Reset", use_container_width=True):
-        save_state({"request": None, "robot_state": "IDLE"})
-        st.rerun()
 
 else:
     st.markdown("#### Select your request")
     st.markdown(" ")
 
-    col1, col2, col3 = st.columns(3)
-
     cols = st.columns(len(REQUEST_TYPES))
     for col, (req_key, req_val) in zip(cols, REQUEST_TYPES.items()):
         with col:
             if st.button(req_val["label"], use_container_width=True, key=req_key):
-                save_state({
-                    "request":      req_val["label"],
-                    "kit":          req_val["kit"],
-                    "patient_id":   DEFAULT_PATIENT_ID,
-                    "risk":         req_val["risk"],
-                    "robot_state":  "REQUEST_RECEIVED",
-                    "timestamp":    datetime.now().isoformat(),
-                })
-                append_log(EventType.REQUEST_CREATED, patient_id=DEFAULT_PATIENT_ID,
-                    request=req_val["label"], kit=req_val["kit"],
-                    next_state="REQUEST_RECEIVED", message="Patient request")
+                try:
+                    service.create_request(req_key)
+                except ValueError as e:
+                    st.error(f"Error: {e}")
+                    st.stop()
                 st.rerun()
 
     st.divider()
