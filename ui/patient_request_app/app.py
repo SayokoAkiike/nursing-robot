@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT_DIR))
 
-from robot_control.config import REQUEST_TYPES, DEFAULT_PATIENT_ID, PATIENTS
+from robot_control.config import REQUEST_TYPES, DEFAULT_PATIENT_ID, PATIENTS, PATIENTS
 from ui.common.style import CSS, LABELS
 from ui.common import api_client
 

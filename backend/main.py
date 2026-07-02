@@ -85,3 +85,14 @@ def emergency_stop_by_id(request_id: str, _=Depends(require_nurse)):
 def reset_by_id(request_id: str, _=Depends(require_nurse)):
     if not storage.get_request(request_id): raise HTTPException(404, "Request not found")
     return service.reset()
+
+@app.post("/tasks/{request_id}/cancel")
+def cancel_by_id(request_id: str, _=Depends(require_nurse)):
+    """看護師側キャンセル（認証あり、早期状態のみ）。"""
+    req = storage.get_request(request_id)
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    try:
+        return service.cancel_request()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
