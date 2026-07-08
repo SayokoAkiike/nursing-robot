@@ -58,12 +58,28 @@ class RobotTaskRow(Base):
 
 
 class KitVerificationRow(Base):
+    """One row per QR verification *attempt* (OK or NG).
+
+    PR9: `patient_id` / `kit_id` are kept for backward compatibility and
+    mean the *scanned* value (what the QR code actually said) -- they are
+    plain aliases for `scanned_patient_id` / `scanned_kit_id` below, always
+    written together. The new `expected_*` / `scanned_*` columns make the
+    NG-cause auditable: with only the old columns, an NG row didn't say
+    what was *supposed* to be scanned, only what *was* scanned, so a
+    patient-mismatch and a kit-mismatch looked identical without re-reading
+    the free-text `message`.
+    """
+
     __tablename__ = "kit_verifications"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    task_id = Column(String, nullable=False)
+    task_id = Column(String, nullable=False, index=True)
     patient_id = Column(String, nullable=True)
     kit_id = Column(String, nullable=True)
+    expected_patient_id = Column(String, nullable=True)
+    scanned_patient_id = Column(String, nullable=True)
+    expected_kit_id = Column(String, nullable=True)
+    scanned_kit_id = Column(String, nullable=True)
     result = Column(String, nullable=False)
     message = Column(Text, nullable=True)
     created_at = Column(String, nullable=True)
