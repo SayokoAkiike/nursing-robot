@@ -1,98 +1,36 @@
-import sys, os
-from pathlib import Path
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-
-ROOT_DIR = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT_DIR))
-
-from backend.schemas import RequestCreate, TransitionRequest, VerifyRequest
-from backend.auth import require_nurse
-from backend import storage
-from robot_control import service
-
-app = FastAPI(title="PreCare Dock API", version="0.3.0")
-
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:8501,http://localhost:8502").split(",")
-app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS,
-    allow_methods=["GET", "POST"], allow_headers=["Authorization", "Content-Type", "x-nurse-token"])
-
-@app.get("/state")
-def get_state(): return service.get_current_state()
-
-@app.post("/requests")
-def create_request(body: RequestCreate):
-    try: return service.create_request(body.request_type, patient_id=body.patient_id)
-    except ValueError as e: raise HTTPException(400, str(e))
-
-@app.post("/transition")
-def transition(body: TransitionRequest, _=Depends(require_nurse)):
-    try: return service.advance_state(body.next_state)
-    except ValueError as e: raise HTTPException(403 if "nurse" in str(e).lower() else 400, str(e))
-
-@app.post("/verify")
-def verify_ids(body: VerifyRequest, _=Depends(require_nurse)):
-    try: return service.verify_ids(body.patient_id, body.kit_id)
-    except ValueError as e: raise HTTPException(409 if "VERIFYING" in str(e) else 400, str(e))
-
-@app.post("/emergency-stop")
-def emergency_stop(_=Depends(require_nurse)): return service.emergency_stop()
-
-@app.post("/reset")
-def reset(_=Depends(require_nurse)): return service.reset()
-
-@app.post("/cancel")
-def cancel(_=Depends(require_nurse)):
-    try: return service.cancel_request()
-    except ValueError as e: raise HTTPException(400, str(e))
-
-@app.get("/logs")
-def get_logs(): return storage.load_logs()
-
-@app.get("/requests")
-def list_requests(): return storage.load_requests()
-
-@app.get("/requests/{request_id}")
-def get_request(request_id: str):
-    req = storage.get_request(request_id)
-    if not req: raise HTTPException(404, "Request not found")
-    return req
-
-@app.post("/requests/{request_id}/cancel")
-def cancel_by_id(request_id: str):
-    if not storage.get_request(request_id): raise HTTPException(404, "Request not found")
-    try: return service.cancel_request()
-    except ValueError as e: raise HTTPException(400, str(e))
-
-@app.post("/tasks/{request_id}/transition")
-def transition_by_id(request_id: str, body: TransitionRequest, _=Depends(require_nurse)):
-    if not storage.get_request(request_id): raise HTTPException(404, "Request not found")
-    try: return service.advance_state(body.next_state)
-    except ValueError as e: raise HTTPException(403 if "nurse" in str(e).lower() else 400, str(e))
-
-@app.post("/tasks/{request_id}/verify")
-def verify_by_id(request_id: str, body: VerifyRequest, _=Depends(require_nurse)):
-    if not storage.get_request(request_id): raise HTTPException(404, "Request not found")
-    try: return service.verify_ids(body.patient_id, body.kit_id)
-    except ValueError as e: raise HTTPException(409 if "VERIFYING" in str(e) else 400, str(e))
-
-@app.post("/tasks/{request_id}/emergency-stop")
-def emergency_stop_by_id(request_id: str, _=Depends(require_nurse)):
-    if not storage.get_request(request_id): raise HTTPException(404, "Request not found")
-    return service.emergency_stop()
-
-@app.post("/tasks/{request_id}/reset")
-def reset_by_id(request_id: str, _=Depends(require_nurse)):
-    if not storage.get_request(request_id): raise HTTPException(404, "Request not found")
-    return service.reset()
-
-@app.post("/tasks/{request_id}/cancel")
-def cancel_by_id(request_id: str, _=Depends(require_nurse)):
-    """看護師側キャンセル（認証あり、早期状態のみ）。"""
-    req = storage.get_request(request_id)
-    if not req:
-        raise HTTPException(status_code=404, detail="Request not found")
-    try:
-        return service.cancel_request()
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+from fastapi.responses import JSONResponse
+ 
+from backend.api import routes_logs, routes_requests, routes_tasks, routes_verification
+from backend.core.config import get_settings
+from backend.core.errors import DomainError
+ 
+app = FastAPI(title="PreCare Dock API", version="0.4.0")
+ 
+settings = get_settings()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_origins,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type", "x-nurse-token"],
+)
+ 
+ 
+@app.exception_handler(DomainError)
+def handle_domain_error(request: Request, exc: DomainError):
+    """Single place mapping domain errors to HTTP responses.
+ 
+    Route handlers no longer catch ValueError / pattern-match error strings
+    to decide a status code -- each service raises the typed error
+    (NotFoundError, ConflictError, ForbiddenError, or plain DomainError) that
+    already carries the right `status_code`.
+    """
+    return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
+ 
+ 
+app.include_router(routes_requests.router)
+app.include_router(routes_tasks.router)
+app.include_router(routes_verification.router)
+app.include_router(routes_logs.router)
+ 
