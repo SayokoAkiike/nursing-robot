@@ -1,71 +1,206 @@
 """Persistence facade used by the services layer.
- 
-PR1 introduced this module as a thin wrapper over the JSON file storage in
-`backend/storage.py`. This PR (PR2) replaces the internals with SQLAlchemy
-against `care_requests` / `robot_events` -- callers (`workflow_service`,
-`verification_service`) are unchanged, since they only ever depended on the
-function signatures below, never on `backend/storage.py` directly. JSON file
-storage is retired; `backend/storage.py` and its test are removed.
- 
-Still a single logical "current request" (see the note in
-`api/routes_requests.py`): `save_state()` clears the table before inserting
-the new row, exactly mirroring the JSON file's whole-file-overwrite
-semantics. PR3 ("Task resource model") is what introduces true multiple
-concurrent rows -- do not build multi-task assumptions on top of this
-module until then.
+
+PR1/PR2 had this module own the "current state" concept (a single
+dict-shaped row). PR3 ("Task resource model") replaces that with plain CRUD
+over the three real tables in `backend/db/models.py` --
+`backend.services.workflow_service` now owns joining/merging rows into the
+dict shape the API and tests expect; this module just persists and fetches
+rows.
 """
-from backend.db.models import CareRequestRow, RobotEventRow
+from backend.db.models import CareRequestRow, KitVerificationRow, RobotEventRow, RobotTaskRow
 from backend.db.session import get_session, init_db
- 
- 
-def _row_to_state(row) -> dict:
-    if row is None:
-        return {"request": None, "robot_state": "IDLE"}
-    return {
-        "request_id": row.request_id,
-        "request_type": row.request_type,
-        "request": row.request_label,
-        "kit": row.kit,
-        "risk": row.risk,
-        "patient_id": row.patient_id,
-        "robot_state": row.robot_state,
-        "timestamp": row.timestamp,
-    }
- 
- 
-def load_state() -> dict:
+
+# States that free up the robot for a new request (mirrors the old JSON
+# singleton's `create_request` guard: `robot_state not in ["IDLE",
+# "COMPLETED", "ERROR"]` raised ConflictError). Note ERROR does *not* block
+# a new request -- that was true of the old code too.
+NON_BLOCKING_TASK_STATES = {"IDLE", "COMPLETED", "ERROR"}
+
+# States hidden from `list_active_tasks()` / GET /requests. Mirrors the old
+# JSON singleton's `load_requests`, which only hid IDLE -- COMPLETED and
+# ERROR tasks stayed visible (so a nurse can see and act on an errored
+# task) until something resets them.
+HIDDEN_FROM_LIST_STATES = {"IDLE"}
+
+
+def _as_dict(row, fields) -> dict:
+    return {f: getattr(row, f) for f in fields}
+
+
+CARE_REQUEST_FIELDS = ["id", "patient_id", "request_type", "priority", "status", "created_at", "completed_at"]
+ROBOT_TASK_FIELDS = ["id", "request_id", "robot_id", "state", "kit_id", "assigned_at", "updated_at"]
+
+
+# ---- care_requests ---------------------------------------------------------
+
+def insert_care_request(row: dict) -> None:
     init_db()
     session = get_session()
     try:
-        row = session.query(CareRequestRow).first()
-        return _row_to_state(row)
-    finally:
-        session.close()
- 
- 
-def save_state(state: dict) -> None:
-    init_db()
-    session = get_session()
-    try:
-        session.query(CareRequestRow).delete()
-        if state.get("request_id"):
-            session.add(
-                CareRequestRow(
-                    request_id=state["request_id"],
-                    request_type=state.get("request_type"),
-                    request_label=state.get("request"),
-                    kit=state.get("kit"),
-                    risk=state.get("risk"),
-                    patient_id=state.get("patient_id"),
-                    robot_state=state.get("robot_state", "IDLE"),
-                    timestamp=state.get("timestamp"),
-                )
-            )
+        session.add(CareRequestRow(**row))
         session.commit()
     finally:
         session.close()
- 
- 
+
+
+def get_care_request(request_id: str) -> dict | None:
+    init_db()
+    session = get_session()
+    try:
+        row = session.get(CareRequestRow, request_id)
+        return _as_dict(row, CARE_REQUEST_FIELDS) if row else None
+    finally:
+        session.close()
+
+
+def update_care_request_status(request_id: str, status: str, completed_at: str | None = None) -> None:
+    init_db()
+    session = get_session()
+    try:
+        row = session.get(CareRequestRow, request_id)
+        if row is not None:
+            row.status = status
+            if completed_at is not None:
+                row.completed_at = completed_at
+            session.commit()
+    finally:
+        session.close()
+
+
+# ---- robot_tasks ------------------------------------------------------------
+
+def insert_robot_task(row: dict) -> None:
+    init_db()
+    session = get_session()
+    try:
+        session.add(RobotTaskRow(**row))
+        session.commit()
+    finally:
+        session.close()
+
+
+def get_task_by_request_id(request_id: str) -> dict | None:
+    init_db()
+    session = get_session()
+    try:
+        row = session.query(RobotTaskRow).filter_by(request_id=request_id).first()
+        return _as_dict(row, ROBOT_TASK_FIELDS) if row else None
+    finally:
+        session.close()
+
+
+def get_active_task_for_robot(robot_id: str) -> dict | None:
+    """The task (if any) currently occupying this robot -- state not in
+    NON_BLOCKING_TASK_STATES. This is the per-robot concurrency guard: at
+    most one such row may exist per robot_id at a time (enforced in
+    workflow_service.create_request, not by a DB constraint yet)."""
+    init_db()
+    session = get_session()
+    try:
+        row = (
+            session.query(RobotTaskRow)
+            .filter(RobotTaskRow.robot_id == robot_id)
+            .filter(RobotTaskRow.state.notin_(NON_BLOCKING_TASK_STATES))
+            .first()
+        )
+        return _as_dict(row, ROBOT_TASK_FIELDS) if row else None
+    finally:
+        session.close()
+
+
+def update_task_state(task_id: str, state: str, updated_at: str) -> None:
+    init_db()
+    session = get_session()
+    try:
+        row = session.get(RobotTaskRow, task_id)
+        if row is not None:
+            row.state = state
+            row.updated_at = updated_at
+            session.commit()
+    finally:
+        session.close()
+
+
+def list_active_tasks() -> list:
+    """Tasks visible in GET /requests -- hides IDLE only (see
+    HIDDEN_FROM_LIST_STATES)."""
+    init_db()
+    session = get_session()
+    try:
+        rows = (
+            session.query(RobotTaskRow)
+            .filter(RobotTaskRow.state.notin_(HIDDEN_FROM_LIST_STATES))
+            .order_by(RobotTaskRow.assigned_at)
+            .all()
+        )
+        return [_as_dict(r, ROBOT_TASK_FIELDS) for r in rows]
+    finally:
+        session.close()
+
+
+# ---- kit_verifications ------------------------------------------------------
+
+def insert_kit_verification(row: dict) -> None:
+    init_db()
+    session = get_session()
+    try:
+        session.add(KitVerificationRow(**row))
+        session.commit()
+    finally:
+        session.close()
+
+
+def list_kit_verifications_for_task(task_id: str) -> list:
+    init_db()
+    session = get_session()
+    try:
+        rows = (
+            session.query(KitVerificationRow)
+            .filter_by(task_id=task_id)
+            .order_by(KitVerificationRow.id)
+            .all()
+        )
+        return [
+            {
+                "task_id": r.task_id,
+                "patient_id": r.patient_id,
+                "kit_id": r.kit_id,
+                "result": r.result,
+                "message": r.message,
+                "created_at": r.created_at,
+            }
+            for r in rows
+        ]
+    finally:
+        session.close()
+
+
+# ---- robot_events (unchanged from PR2) --------------------------------------
+
+def append_log_entry(entry: dict) -> None:
+    init_db()
+    session = get_session()
+    try:
+        session.add(
+            RobotEventRow(
+                request_id=entry.get("request_id"),
+                task_id=entry.get("task_id"),
+                timestamp=entry.get("timestamp", ""),
+                event_type=entry.get("event_type", ""),
+                patient_id=entry.get("patient_id"),
+                request=entry.get("request"),
+                kit=entry.get("kit"),
+                previous_state=entry.get("previous_state"),
+                next_state=entry.get("next_state"),
+                result=entry.get("result"),
+                message=entry.get("message"),
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+
 def load_logs() -> list:
     init_db()
     session = get_session()
@@ -87,41 +222,4 @@ def load_logs() -> list:
         ]
     finally:
         session.close()
- 
- 
-def append_log_entry(entry: dict) -> None:
-    init_db()
-    session = get_session()
-    try:
-        session.add(
-            RobotEventRow(
-                request_id=entry.get("request_id"),
-                timestamp=entry.get("timestamp", ""),
-                event_type=entry.get("event_type", ""),
-                patient_id=entry.get("patient_id"),
-                request=entry.get("request"),
-                kit=entry.get("kit"),
-                previous_state=entry.get("previous_state"),
-                next_state=entry.get("next_state"),
-                result=entry.get("result"),
-                message=entry.get("message"),
-            )
-        )
-        session.commit()
-    finally:
-        session.close()
- 
- 
-def list_requests() -> list:
-    state = load_state()
-    if state.get("robot_state", "IDLE") == "IDLE":
-        return []
-    return [state]
- 
- 
-def get_request(request_id: str):
-    state = load_state()
-    if state.get("request_id") == request_id:
-        return state
-    return None
- 
+

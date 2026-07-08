@@ -30,6 +30,15 @@ backend/
  
 `robot_control/`・`vision/qr_detection/verify_patient_kit.py` は `ui/` からの参照のために残した後方互換シムです（実体は `backend/` 側）。
  
+## タスクリソースモデル（PR3）
+
+`request_id`は実在する`care_requests`行を指し、`robot_tasks`行と結合されます。以前（PR1/PR2）は単一のシングルトン行しか存在せず、`request_id`は404判定にしか使われていませんでしたが、現在は本当に複数の`care_requests`/`robot_tasks`が存在できます。
+
+- 同時実行制約: 1ロボット（`robot_id`）につきアクティブな`robot_tasks`は1件まで（`backend/services/workflow_service.py`の`create_request`）。制約はロボット単位なので、将来ロボットが増えてもスキーマ変更なしで並行実行できます。
+- キャンセル・リセット後も`request_id`で履歴を参照可能（旧JSON方式は全消去していました）。
+- QR照合は`kit_verifications`に成功・失敗を問わず1件ずつ記録されます（`robot_events`とは別の監査ログ）。
+
+
 ## データベース
  
 デフォルトはSQLite（`data/precare.db`、設定不要）。PostgreSQLを使う場合:
@@ -56,7 +65,7 @@ alembic upgrade head
  
 ## エンドポイント
  
-現状はタスク（`robot_tasks`相当）を1件しか同時に保持できないため、`{request_id}`は404判定にのみ使われます。複数タスクの真の同時実行はPR3（タスクリソースモデル化）で対応予定です。
+`{request_id}`は`care_requests`行を実際に指します（詳細は上記「タスクリソースモデル」参照）。
  
 | Method | Path | 認証 | 説明 |
 |--------|------|------|------|
@@ -83,3 +92,4 @@ alembic upgrade head
 このAPIは医療機器ではありません。研究・教育・コンテスト向けのプロトタイプです。
  
  
+
