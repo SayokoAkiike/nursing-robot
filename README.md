@@ -65,6 +65,18 @@ mypy backend perception vision
 pytest tests/ --cov=backend --cov=perception --cov=vision --cov-report=term-missing
 ```
 
+### デモデータ（PR12、開発・デモ用 -- 本番では使わない）
+
+Analytics API（`/analytics/*`）の中身を実データで確認するためのスクリプト。明示的にコマンドを実行したときだけ動作し、起動時に自動実行されることはない。ロボットにアクティブなタスクがある状態では拒否される（実行中タスクを壊さない）。
+
+```bash
+# 直近7日間に散らばる20件の合成リクエストを生成（正常完了/患者・看護師キャンセル/QR照合NG/緊急停止/看護師確認待ちが長いケースを含む）
+python -m backend.scripts.seed_demo_data --days 7 --tasks 20
+
+# 生成したデータを全て削除（確認プロンプトあり。--yesでスキップ可）
+python -m backend.scripts.reset_demo_data
+```
+
  
 ---
  
