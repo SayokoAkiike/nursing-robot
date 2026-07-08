@@ -28,22 +28,45 @@ PreCareBot は、看護現場の転倒予防を目的とした「安全制約つ
 | サービス層 | `robot_control/service.py` | ✅ |
 | QRコード生成・照合 | `vision/qr_detection/` | ✅ |
 | イベントログ | `robot_control/logger.py` | ✅ |
-| pytest テスト（52件） | `tests/` （API/workflow service/state machine/repositories/verification） | ✅ |
 | PostgreSQL/SQLAlchemy永続化 + Alembicマイグレーション | `backend/db/`, `alembic/` | ✅ |
 | タスクリソースモデル（care_requests/robot_tasks/kit_verifications、ロボット単位の同時実行制約） | `backend/db/models.py`, `backend/services/workflow_service.py` | ✅ |
+| Perceptionモジュール（複数フレーム確定QR検出＋照合APIクライアント） | `perception/` | ✅ |
+| 合成QRデモ動画生成（実写映像不使用） | `vision/qr_detection/demo/` | ✅ |
+| QR検出の評価ベンチマーク（confirm_frames毎の検出成功率・所要フレーム数・不安定検出数） | `perception/evaluate_detector.py` | ✅ |
+| 品質管理（ruff / mypy / pytest-cov / CI） | `ruff.toml`, `mypy.ini`, `.coveragerc`, `.github/workflows/pytest.yml` | ✅ |
+| pytest テスト（89件） | `tests/` （API/workflow service/state machine/repositories/verification/perception/vision） | ✅ |
  
 ## ❌ 未実装（今後の予定）
  
 | 機能 | 予定フェーズ |
 |------|------------|
-| PyBullet 病室シミュレーション | Phase 3 |
-| カメラQRリアルタイムスキャン | Phase 3 |
+| PyBullet 病室シミュレーション | Phase 4 |
+| 実カメラでのリアルタイムQRスキャン（現状は合成動画/画像ディレクトリ入力のみ検証済み） | Phase 4 |
 | 物理ロボット制御・ナビゲーション | Phase 4 |
 | マルチロボット・複数病棟対応 | Phase 5 |
  
  
 ---
  
+## 📷 Perception・評価パイプライン（PR4〜PR6）
+
+既存の `vision/qr_detection/read_qr.py` は単一フレーム読み取りのみでしたが、`perception/` は複数フレーム確定判定とバックエンドAPIとの連携までを担います。
+
+- `perception/camera_source.py` — フレーム供給元の抽象化（Webカメラ／動画ファイル／画像ディレクトリ）。Codespacesにはカメラがないため動画ファイルか画像ディレクトリを使う。
+- `perception/qr_detector.py` — `StableQRDetector`：同じ値をNフレーム連続で検出して初めて確定（`confirm_frames`、デフォルト3）。確定前に途切れた場合は `unstable_detection_count` に計上。
+- `perception/verification_client.py` — `POST /tasks/{request_id}/verify` 等を叩くHTTPクライアント（`httpx`ベース）。
+- `perception/run_perception.py` — 上記3つをつなぐCLI。患者IDQRとキットIDQRの両方が確定した時点でバックエンドに照合をリクエストする。
+- `vision/qr_detection/demo/` — 実写映像を使わない合成QRデモ動画生成（カメラ揺れ・距離変化・角度変化・遮蔽・明るさ変化・ノイズをシミュレート）。動画・メタデータはgit管理外（`.gitignore`）。
+- `perception/evaluate_detector.py` — `confirm_frames`パラメータを振って合成シーンに対する検出成功率・平均所要フレーム数・不安定検出数を計測する古典的な評価ベンチマーク（MLは使用しない）。
+
+```bash
+python -m perception.run_perception --request-id <request_id> --source path/to/frames_or_video --base-url http://localhost:8000 --nurse-token $NURSE_TOKEN
+python -m vision.qr_detection.demo.generate_synthetic_video
+python -m perception.evaluate_detector --seeds 0,1,2,3,4 --confirm-frames 1,2,3,5
+```
+
+---
+
 ## 🚀 Quick Start
  
 ```bash
@@ -54,6 +77,15 @@ python -m streamlit run ui/patient_request_app/app.py --server.port 8501
 python -m streamlit run ui/nurse_dashboard/app.py --server.port 8502
 pytest tests/ -v
 ```
+
+### 品質チェック（PR7）
+
+```bash
+ruff check .
+mypy backend perception vision
+pytest tests/ --cov=backend --cov=perception --cov=vision --cov-report=term-missing
+```
+
  
 ---
  
@@ -91,9 +123,9 @@ pytest tests/ -v
  
 | フェーズ | 内容 | 状態 |
 |---------|------|------|
-| Phase 1–2 | API設計・UI分離・ステートマシン・pytest 38件 | ✅ |
-| Phase 3 | PyBulletシミュレーション・CI整備 | 🔨 |
-| Phase 4 | PyBullet シミュレーション | 📋 |
+| Phase 1–2 | API設計・UI分離・ステートマシン | ✅ |
+| Phase 3 | PostgreSQL化・タスクリソースモデル・Perception・合成QRデモ・評価ベンチマーク・CI/品質整備（pytest 89件） | ✅ |
+| Phase 4 | PyBulletシミュレーション・実カメラ対応 | 📋 |
 | Phase 5 | 実機MVP・LeRobot | 📋 |
  
 ---

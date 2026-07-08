@@ -1,13 +1,14 @@
 import streamlit as st
-import time, sys
+import time
+import sys
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT_DIR))
 
-from robot_control.config import REQUEST_TYPES, DEFAULT_PATIENT_ID, PATIENTS, PATIENTS
-from ui.common.style import CSS, LABELS
-from ui.common import api_client
+from robot_control.config import REQUEST_TYPES, DEFAULT_PATIENT_ID, PATIENTS  # noqa: E402
+from ui.common.style import CSS, LABELS  # noqa: E402
+from ui.common import api_client  # noqa: E402
 
 st.set_page_config(page_title=LABELS["app_patient"], layout="centered")
 st.markdown(CSS, unsafe_allow_html=True)
@@ -39,12 +40,16 @@ if my_task:
         st.caption(f"Status: {robot_state}")
         if robot_state in {"REQUEST_RECEIVED", "KIT_SELECTED"}:
             if st.button("Cancel request", use_container_width=True):
-                try: api_client.cancel_request(request_id)
-                except Exception as e: st.error(f"Error: {e}"); st.stop()
+                try:
+                    api_client.cancel_request(request_id)
+                except Exception as e:
+                    st.error(f"Error: {e}")
+                    st.stop()
                 st.rerun()
         else:
             st.caption("To cancel, please contact a nurse.")
-        time.sleep(3); st.rerun()
+        time.sleep(3)
+        st.rerun()
     elif robot_state == "COMPLETED":
         st.success("Assistance complete. Thank you.")
     elif robot_state == "ERROR":
@@ -55,8 +60,11 @@ else:
     for col, (req_key, req_val) in zip(cols, REQUEST_TYPES.items()):
         with col:
             if st.button(req_val["label"], use_container_width=True, key=req_key):
-                try: api_client.create_request(patient_id, req_key)
-                except Exception as e: st.error(f"Error: {e}"); st.stop()
+                try:
+                    api_client.create_request(patient_id, req_key)
+                except Exception as e:
+                    st.error(f"Error: {e}")
+                    st.stop()
                 st.rerun()
     st.divider()
     st.caption("Press a button to notify the nurse. The robot will begin preparation.")

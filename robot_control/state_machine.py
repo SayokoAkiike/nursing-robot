@@ -1,5 +1,5 @@
 """Backward-compat shim.
- 
+
 The state machine now lives in `backend/services/robot_service.py` (see that
 module's docstring for why it was consolidated from two disagreeing
 implementations into one). Kept here because
@@ -18,11 +18,11 @@ from backend.services.robot_service import (  # noqa: F401
     is_valid_transition,
     verify_transition,
 )
- 
+
 if __name__ == "__main__":
     from backend.services.robot_service import RobotStateMachine as _Demo  # noqa
- 
+
     import runpy
- 
+
     runpy.run_module("backend.services.robot_service", run_name="__main__")
- 
+

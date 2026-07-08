@@ -7,7 +7,6 @@ QRコード読み取りスクリプト (Day 8)
 
 import cv2
 import argparse
-import sys
 
 
 def read_qr_from_image(image_path: str) -> str | None:
@@ -54,7 +53,6 @@ def read_qr_from_camera():
 
         # QR検出範囲を描画
         if points is not None:
-            import numpy as np
             pts = points[0].astype(int)
             cv2.polylines(frame, [pts], True, (0, 255, 0), 2)
             if data:

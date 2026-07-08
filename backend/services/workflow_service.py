@@ -108,7 +108,7 @@ def list_requests() -> list:
 
 
 def get_request(request_id: str):
-    return _view(request_id)
+    return _view_or_error(request_id)
 
 
 def require_request(request_id: str) -> dict:
@@ -123,6 +123,24 @@ def _require_task(request_id: str) -> dict:
     if task is None:
         raise NotFoundError("Request not found")
     return task
+def _require_care_request(request_id: str) -> dict:
+    req = repositories.get_care_request(request_id)
+    if req is None:
+        raise NotFoundError("Request not found")
+    return req
+def _view_or_error(request_id: str) -> dict:
+    """Like `_view`, but raises instead of returning None.
+
+    Used at call sites that have already confirmed (via `_require_task` /
+    `_require_care_request`) that both rows exist, so `_view` returning
+    None here would indicate a genuine invariant violation rather than a
+    normal not-found case -- this makes that assumption explicit instead
+    of silently propagating an Optional.
+    """
+    view = _view(request_id)
+    if view is None:
+        raise NotFoundError("Request not found")
+    return view
 
 
 def create_request(request_type: str, patient_id: str = DEFAULT_PATIENT_ID) -> dict:
@@ -168,7 +186,7 @@ def create_request(request_type: str, patient_id: str = DEFAULT_PATIENT_ID) -> d
         next_state="REQUEST_RECEIVED",
         message=f"{request_type} request created",
     )
-    return _view(request_id)
+    return _view_or_error(request_id)
 
 
 def advance_state(request_id: str, next_state: str) -> dict:
@@ -210,12 +228,12 @@ def advance_state(request_id: str, next_state: str) -> dict:
     )
     if next_state == "COMPLETED":
         repositories.update_care_request_status(request_id, "COMPLETED", completed_at=now)
-    return _view(request_id)
+    return _view_or_error(request_id)
 
 
 def verify_ids(request_id: str, patient_id: str, kit_id: str) -> dict:
     task = _require_task(request_id)
-    req = repositories.get_care_request(request_id)
+    req = _require_care_request(request_id)
     current = task["state"]
     now = datetime.now().isoformat()
 
@@ -291,7 +309,7 @@ def verify_ids(request_id: str, patient_id: str, kit_id: str) -> dict:
             next_state=target,
             message=result["message"],
         )
-        return {"ok": True, "state": _view(request_id)}
+        return {"ok": True, "state": _view_or_error(request_id)}
 
     repositories.update_task_state(task["id"], "ERROR", now)
     _log(
@@ -319,7 +337,7 @@ def emergency_stop(request_id: str) -> dict:
         next_state="ERROR",
         message="Emergency stop triggered",
     )
-    return _view(request_id)
+    return _view_or_error(request_id)
 
 
 def reset(request_id: str) -> dict:
@@ -336,7 +354,7 @@ def reset(request_id: str) -> dict:
         next_state="IDLE",
         message="Reset to IDLE",
     )
-    return _view(request_id)
+    return _view_or_error(request_id)
 
 
 def cancel_request(request_id: str) -> dict:
@@ -355,5 +373,5 @@ def cancel_request(request_id: str) -> dict:
         next_state="IDLE",
         message="Request cancelled",
     )
-    return _view(request_id)
+    return _view_or_error(request_id)
 

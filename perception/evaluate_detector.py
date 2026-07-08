@@ -89,8 +89,8 @@ def summarize(results: "list[EvaluationResult]") -> dict:
     summary = {}
     for confirm_frames, group in sorted(by_confirm_frames.items()):
         n = len(group)
-        patient_times = [r.patient_frames_to_confirm for r in group if r.patient_confirmed]
-        kit_times = [r.kit_frames_to_confirm for r in group if r.kit_confirmed]
+        patient_times = [r.patient_frames_to_confirm for r in group if r.patient_frames_to_confirm is not None]
+        kit_times = [r.kit_frames_to_confirm for r in group if r.kit_frames_to_confirm is not None]
         summary[confirm_frames] = {
             "runs": n,
             "patient_success_rate": sum(r.patient_confirmed for r in group) / n,
