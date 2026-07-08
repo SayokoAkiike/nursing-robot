@@ -7,8 +7,9 @@ deployment, so keeping the aggregation logic in plain Python keeps it
 trivially portable across SQLite/PostgreSQL and easy to unit test without
 a real database's SQL dialect quirks. If data volume ever became a real
 concern, these would be the functions to rewrite as SQL aggregates first
-(see PR11's /analytics/state-durations for a case where that tradeoff is
-revisited).
+(see PR11's `state_durations()` below for a case where that tradeoff is
+revisited in miniature: still Python, but genuinely closer to a
+window-function computation than the other two).
 """
 from datetime import datetime
 
@@ -89,3 +90,66 @@ def verification_failures() -> list:
         {"failure_type": failure_type, "count": count}
         for failure_type, count in sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
     ]
+
+
+def state_durations() -> list:
+    """GET /analytics/state-durations: average time spent in each robot_tasks
+    state, derived from consecutive `task_state_transitions` rows.
+
+    Each transition row records the *instant* a task moved from
+    `from_state` to `to_state`. There's no explicit "exited_at" column, so
+    the time spent *in* `to_state` has to be read off the next transition
+    row for the same task_id: `next.occurred_at - this.occurred_at`. This
+    is a manual version of what a SQL `lead() over (partition by task_id
+    order by occurred_at)` window function would give directly -- doing it
+    in Python here (rather than adding real window-function SQL) keeps
+    this consistent with `summary()` / `verification_failures()` above,
+    and this project's data volume doesn't need the SQL version yet.
+
+    Two cases intentionally produce no duration sample for a given row:
+      - A task_id with only one transition ever recorded has no "next" row
+        to diff against.
+      - The *last* transition recorded for any task_id -- its `to_state`
+        is either where that task is still sitting right now, or where its
+        lifecycle permanently ended (a new request always gets a brand new
+        task_id, so a task_id's row is never revisited after its last
+        transition). Either way, no exit time exists to compute, so it is
+        left out rather than guessed at.
+
+    Only *closed* intervals (a row with a following row for the same
+    task_id) are counted. This means in-progress tasks contribute samples
+    for every state they've already passed through, just not their current
+    (still-open) state.
+    """
+    transitions = repositories.list_task_state_transitions()
+
+    by_task: dict[str, list[dict]] = {}
+    for row in transitions:
+        by_task.setdefault(row["task_id"], []).append(row)
+
+    samples_by_state: dict[str, list[float]] = {}
+    for rows in by_task.values():
+        # Already ordered oldest-first within each task_id, since
+        # list_task_state_transitions() orders globally by id (an
+        # autoincrement column) and id order is a superset of each task's
+        # own chronological order.
+        for current_row, next_row in zip(rows, rows[1:]):
+            started = _parse_iso(current_row["occurred_at"])
+            ended = _parse_iso(next_row["occurred_at"])
+            if started is None or ended is None:
+                continue
+            state = current_row["to_state"]
+            samples_by_state.setdefault(state, []).append((ended - started).total_seconds())
+
+    result = [
+        {
+            "state": state,
+            "sample_count": len(values),
+            "average_seconds": round(sum(values) / len(values), 3),
+            "min_seconds": round(min(values), 3),
+            "max_seconds": round(max(values), 3),
+        }
+        for state, values in samples_by_state.items()
+    ]
+    result.sort(key=lambda row: str(row["state"]))
+    return result
