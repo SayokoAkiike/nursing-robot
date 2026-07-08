@@ -44,28 +44,7 @@ PreCareBot は、看護現場の転倒予防を目的とした「安全制約つ
 | 実カメラでのリアルタイムQRスキャン（現状は合成動画/画像ディレクトリ入力のみ検証済み） | Phase 4 |
 | 物理ロボット制御・ナビゲーション | Phase 4 |
 | マルチロボット・複数病棟対応 | Phase 5 |
- 
- 
----
- 
-## 📷 Perception・評価パイプライン（PR4〜PR6）
 
-既存の `vision/qr_detection/read_qr.py` は単一フレーム読み取りのみでしたが、`perception/` は複数フレーム確定判定とバックエンドAPIとの連携までを担います。
-
-- `perception/camera_source.py` — フレーム供給元の抽象化（Webカメラ／動画ファイル／画像ディレクトリ）。Codespacesにはカメラがないため動画ファイルか画像ディレクトリを使う。
-- `perception/qr_detector.py` — `StableQRDetector`：同じ値をNフレーム連続で検出して初めて確定（`confirm_frames`、デフォルト3）。確定前に途切れた場合は `unstable_detection_count` に計上。
-- `perception/verification_client.py` — `POST /tasks/{request_id}/verify` 等を叩くHTTPクライアント（`httpx`ベース）。
-- `perception/run_perception.py` — 上記3つをつなぐCLI。患者IDQRとキットIDQRの両方が確定した時点でバックエンドに照合をリクエストする。
-- `vision/qr_detection/demo/` — 実写映像を使わない合成QRデモ動画生成（カメラ揺れ・距離変化・角度変化・遮蔽・明るさ変化・ノイズをシミュレート）。動画・メタデータはgit管理外（`.gitignore`）。
-- `perception/evaluate_detector.py` — `confirm_frames`パラメータを振って合成シーンに対する検出成功率・平均所要フレーム数・不安定検出数を計測する古典的な評価ベンチマーク（MLは使用しない）。
-
-```bash
-python -m perception.run_perception --request-id <request_id> --source path/to/frames_or_video --base-url http://localhost:8000 --nurse-token $NURSE_TOKEN
-python -m vision.qr_detection.demo.generate_synthetic_video
-python -m perception.evaluate_detector --seeds 0,1,2,3,4 --confirm-frames 1,2,3,5
-```
-
----
 
 ## 🚀 Quick Start
  
