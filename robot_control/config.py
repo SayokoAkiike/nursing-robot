@@ -1,5 +1,5 @@
 """Backward-compat shim.
- 
+
 Domain constants now live in `backend/core/config.py`. Kept here because
 `ui/patient_request_app/app.py` still imports from this path; will be
 removed once the UI is updated to import from `backend.core.config`
@@ -11,4 +11,4 @@ from backend.core.config import (  # noqa: F401
     PATIENTS,
     REQUEST_TYPES,
 )
- 
+

@@ -1,6 +1,6 @@
 from pydantic import BaseModel
- 
- 
+
+
 class LogEntry(BaseModel):
     timestamp: str
     event_type: str
@@ -11,4 +11,4 @@ class LogEntry(BaseModel):
     next_state: str = "—"
     result: str = "—"
     message: str = ""
- 
+

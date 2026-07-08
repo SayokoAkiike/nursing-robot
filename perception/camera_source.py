@@ -36,7 +36,7 @@ class VideoFileSource(FrameSource):
         if not os.path.exists(path):
             raise FileNotFoundError(f"Video file not found: {path}")
         self.path = path
-        self._cap = None
+        self._cap: "cv2.VideoCapture | None" = None
 
     def frames(self) -> Iterator[np.ndarray]:
         self._cap = cv2.VideoCapture(self.path)
@@ -89,7 +89,7 @@ class WebcamSource(FrameSource):
 
     def __init__(self, index: int = 0):
         self.index = index
-        self._cap = None
+        self._cap: "cv2.VideoCapture | None" = None
 
     def frames(self) -> Iterator[np.ndarray]:
         self._cap = cv2.VideoCapture(self.index)

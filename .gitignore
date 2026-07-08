@@ -21,6 +21,10 @@ vision/qr_detection/demo/*.json
  
 # バックアップ
 *.bak
+
+# カバレッジ
+.coverage
+htmlcov/
  
 # OS
 .DS_Store

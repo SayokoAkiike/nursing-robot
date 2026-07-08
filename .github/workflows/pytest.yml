@@ -2,12 +2,12 @@ name: pytest
 
 on:
   push:
-    branches: [ main, 'phase1-phase2', 'fix_*', 'feature/*', 'refactor/*', 'improve/*' ]
+    branches: [ '**' ]
   pull_request:
     branches: [ main ]
 
 jobs:
-  test:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,7 +16,11 @@ jobs:
           python-version: "3.11"
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Run tests
-        run: pytest tests/ -v
+      - name: Lint (ruff)
+        run: ruff check .
+      - name: Type check (mypy)
+        run: mypy backend perception vision
+      - name: Run tests with coverage
+        run: pytest tests/ -v --cov=backend --cov=perception --cov=vision --cov-report=term-missing
         env:
           NURSE_TOKEN: precare-dev-token-2026

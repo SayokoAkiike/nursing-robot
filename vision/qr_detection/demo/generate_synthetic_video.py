@@ -33,7 +33,7 @@ def generate_video(config: SceneConfig, output_path: str, metadata_path: "str | 
     if metadata_path is None:
         metadata_path = os.path.splitext(output_path)[0] + ".json"
 
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
     writer = cv2.VideoWriter(output_path, fourcc, config.fps, (config.frame_size, config.frame_size))
     if not writer.isOpened():
         raise RuntimeError(f"Could not open video writer for: {output_path}")

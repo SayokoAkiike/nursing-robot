@@ -34,3 +34,8 @@ SQLAlchemy==2.0.51
 alembic==1.18.5
 psycopg2-binary==2.9.10
  
+
+# Quality tooling (PR7)
+ruff==0.15.20
+mypy==2.2.0
+pytest-cov==7.1.0

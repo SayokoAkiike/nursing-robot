@@ -19,7 +19,7 @@ needing to decode a video file at all.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import cv2
 import numpy as np
@@ -108,10 +108,10 @@ def _apply_perspective_skew(img: np.ndarray, skew_px: float, rng: np.random.Gene
     """Warps the four corners of `img` by up to `skew_px` to simulate a
     changing viewing angle."""
     h, w = img.shape[:2]
-    src = np.float32([[0, 0], [w, 0], [0, h], [w, h]])
+    src = np.float32([[0, 0], [w, 0], [0, h], [w, h]])  # type: ignore[arg-type]
     jitter = rng.uniform(-skew_px, skew_px, size=(4, 2)).astype(np.float32)
     dst = src + jitter
-    matrix = cv2.getPerspectiveTransform(src, dst)
+    matrix = cv2.getPerspectiveTransform(src, dst)  # type: ignore[call-overload]
     return cv2.warpPerspective(img, matrix, (w, h), borderValue=(255, 255, 255))
 
 

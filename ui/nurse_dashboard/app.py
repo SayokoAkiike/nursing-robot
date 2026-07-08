@@ -1,14 +1,15 @@
 import streamlit as st
-import time, sys
+import time
+import sys
 from datetime import datetime
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT_DIR))
 
-from robot_control.state_machine import STATE_LABELS as STATE_MESSAGES, ALLOWED_TRANSITIONS, DISPLAY_FLOW
-from ui.common.style import CSS, LABELS
-from ui.common import api_client
+from robot_control.state_machine import STATE_LABELS as STATE_MESSAGES, ALLOWED_TRANSITIONS, DISPLAY_FLOW  # noqa: E402
+from ui.common.style import CSS, LABELS  # noqa: E402
+from ui.common import api_client  # noqa: E402
 
 st.set_page_config(page_title=LABELS["app_nurse"], layout="wide")
 st.markdown(CSS, unsafe_allow_html=True)
@@ -16,17 +17,23 @@ st.markdown(CSS, unsafe_allow_html=True)
 RISK_COLOR = {"転倒リスクあり": "High", "要確認": "Check", "なし": "Low"}
 
 def call_api(fn, *args, **kwargs):
-    try: return fn(*args, **kwargs)
-    except Exception as e: st.error(f"API error: {e}"); return None
+    try:
+        return fn(*args, **kwargs)
+    except Exception as e:
+        st.error(f"API error: {e}")
+        return None
 
 col_h1, col_h2 = st.columns([3, 1])
-with col_h1: st.markdown("## PreCare Console")
-with col_h2: st.caption(datetime.now().strftime("%H:%M:%S"))
+with col_h1:
+    st.markdown("## PreCare Console")
+with col_h2:
+    st.caption(datetime.now().strftime("%H:%M:%S"))
 
 try:
     tasks = api_client.get_requests()
 except Exception as e:
-    st.error(f"Backend not reachable: {e}"); st.stop()
+    st.error(f"Backend not reachable: {e}")
+    st.stop()
 
 if not tasks:
     st.markdown("<p style='color:#888;padding:2rem 0'>Waiting for patient request.</p>", unsafe_allow_html=True)
@@ -59,26 +66,32 @@ else:
             with c1:
                 if rs == "WAITING_FOR_NURSE_CONFIRMATION":
                     if st.button("Release kit", key=f"rel_{request_id}", use_container_width=True, type="primary"):
-                        if call_api(api_client.transition_task, request_id, "KIT_RELEASED"): st.rerun()
+                        if call_api(api_client.transition_task, request_id, "KIT_RELEASED"):
+                            st.rerun()
                 elif rs == "VERIFYING_PATIENT":
                     if st.button("Verify and dock", key=f"ver_{request_id}", use_container_width=True):
-                        if call_api(api_client.verify_task, request_id, pid, kit): st.rerun()
+                        if call_api(api_client.verify_task, request_id, pid, kit):
+                            st.rerun()
                 elif rs in ALLOWED_TRANSITIONS:
                     next_s = ALLOWED_TRANSITIONS[rs]
                     if st.button(f"Next: {STATE_MESSAGES.get(next_s, next_s)}", key=f"next_{request_id}", use_container_width=True):
-                        if call_api(api_client.transition_task, request_id, next_s): st.rerun()
+                        if call_api(api_client.transition_task, request_id, next_s):
+                            st.rerun()
             with c2:
                 if rs in {"COMPLETED", "ERROR"}:
                     if st.button("Reset", key=f"reset_{request_id}", use_container_width=True):
-                        if call_api(api_client.reset_task, request_id): st.rerun()
+                        if call_api(api_client.reset_task, request_id):
+                            st.rerun()
             with c3:
                 if rs in {"REQUEST_RECEIVED", "KIT_SELECTED"}:
                     if st.button("Cancel", key=f"cancel_{request_id}", use_container_width=True):
-                        if call_api(api_client.nurse_cancel, request_id): st.rerun()
+                        if call_api(api_client.nurse_cancel, request_id):
+                            st.rerun()
             with c4:
                 if rs not in {"COMPLETED", "ERROR", "IDLE"}:
                     if st.button("Emergency stop", key=f"stop_{request_id}", use_container_width=True):
-                        if call_api(api_client.emergency_stop, request_id): st.rerun()
+                        if call_api(api_client.emergency_stop, request_id):
+                            st.rerun()
             if rs == "ERROR":
                 st.error("Error detected. Confirm and reset.")
         st.divider()
@@ -95,4 +108,6 @@ else:
     st.caption("No logs yet.")
 st.divider()
 auto = st.checkbox("Auto-refresh every 3 seconds")
-if auto: time.sleep(3); st.rerun()
+if auto:
+    time.sleep(3)
+    st.rerun()
