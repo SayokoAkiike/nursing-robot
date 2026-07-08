@@ -7,6 +7,8 @@ over the three real tables in `backend/db/models.py` --
 dict shape the API and tests expect; this module just persists and fetches
 rows.
 """
+from datetime import datetime, timedelta
+
 from backend.db.models import (
     CareRequestRow,
     KitVerificationRow,
@@ -327,5 +329,88 @@ def load_logs() -> list:
             }
             for r in rows
         ]
+    finally:
+        session.close()
+
+
+# ---- demo data lifecycle (PR12) ---------------------------------------------
+#
+# Used only by backend/scripts/seed_demo_data.py and reset_demo_data.py --
+# nothing in the API or services layer calls these. Kept here rather than in
+# the scripts themselves so they follow the same "scripts don't talk to the
+# ORM directly" rule as everything else in this codebase.
+
+def _shift_timestamp(value: str | None, delta_seconds: float) -> str | None:
+    """Shift a stored timestamp string by delta_seconds, preserving whichever
+    of the two formats this codebase actually uses:
+      - `datetime.isoformat()` (care_requests/robot_tasks/kit_verifications/
+        task_state_transitions) -- contains "T".
+      - `datetime.strftime("%Y-%m-%d %H:%M:%S")` (robot_events, written by
+        workflow_service._log()) -- space-separated, no "T".
+    Returns None unchanged (e.g. a not-yet-completed care_request's
+    completed_at).
+    """
+    if not value:
+        return value
+    if "T" in value:
+        shifted = datetime.fromisoformat(value) + timedelta(seconds=delta_seconds)
+        return shifted.isoformat()
+    shifted = datetime.strptime(value, "%Y-%m-%d %H:%M:%S") + timedelta(seconds=delta_seconds)
+    return shifted.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def shift_timestamps_for_request(request_id: str, delta_seconds: float) -> None:
+    """Backdate (or postdate) every row belonging to one request_id by the
+    same delta_seconds.
+
+    Shifting every related row by an identical amount preserves every
+    duration and ordering *within* that request exactly as it really
+    happened when generated -- only which real-world day it appears to have
+    happened on changes. This is what lets seed_demo_data.py spread
+    synthetic requests across a `--days` window without fabricating
+    internally-inconsistent timestamps.
+    """
+    init_db()
+    session = get_session()
+    try:
+        care_request = session.get(CareRequestRow, request_id)
+        if care_request is not None:
+            care_request.created_at = _shift_timestamp(care_request.created_at, delta_seconds)
+            care_request.completed_at = _shift_timestamp(care_request.completed_at, delta_seconds)
+
+        task = session.query(RobotTaskRow).filter_by(request_id=request_id).first()
+        if task is not None:
+            task.assigned_at = _shift_timestamp(task.assigned_at, delta_seconds)
+            task.updated_at = _shift_timestamp(task.updated_at, delta_seconds)
+
+        if task is not None:
+            for kv in session.query(KitVerificationRow).filter_by(task_id=task.id).all():
+                kv.created_at = _shift_timestamp(kv.created_at, delta_seconds)
+
+        for transition in session.query(TaskStateTransitionRow).filter_by(request_id=request_id).all():
+            transition.occurred_at = _shift_timestamp(transition.occurred_at, delta_seconds)
+
+        for event in session.query(RobotEventRow).filter_by(request_id=request_id).all():
+            event.timestamp = _shift_timestamp(event.timestamp, delta_seconds)
+
+        session.commit()
+    finally:
+        session.close()
+
+
+def delete_all_data() -> None:
+    """Wipe every row from every table. Full reset, not a selective one --
+    there's no column marking which rows are "seeded" vs real, so this is
+    only appropriate against a local/demo database.
+    """
+    init_db()
+    session = get_session()
+    try:
+        session.query(TaskStateTransitionRow).delete()
+        session.query(KitVerificationRow).delete()
+        session.query(RobotEventRow).delete()
+        session.query(RobotTaskRow).delete()
+        session.query(CareRequestRow).delete()
+        session.commit()
     finally:
         session.close()
