@@ -14,7 +14,20 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
- 
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://precare:precare@db:5432/precare
+      NURSE_TOKEN: ${NURSE_TOKEN:-precare-dev-token-2026}
+      ALLOWED_ORIGINS: http://localhost:8501,http://localhost:8502
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   precare_pgdata:
- 
