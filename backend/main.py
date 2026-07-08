@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from backend.api import routes_logs, routes_requests, routes_tasks, routes_verification
+from backend.api import routes_analytics, routes_logs, routes_requests, routes_tasks, routes_verification
 from backend.core.config import get_settings
 from backend.core.errors import DomainError
 from backend.db.session import init_db
@@ -49,4 +49,5 @@ app.include_router(routes_requests.router)
 app.include_router(routes_tasks.router)
 app.include_router(routes_verification.router)
 app.include_router(routes_logs.router)
+app.include_router(routes_analytics.router)
 
