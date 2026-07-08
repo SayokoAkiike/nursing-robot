@@ -7,7 +7,13 @@ over the three real tables in `backend/db/models.py` --
 dict shape the API and tests expect; this module just persists and fetches
 rows.
 """
-from backend.db.models import CareRequestRow, KitVerificationRow, RobotEventRow, RobotTaskRow
+from backend.db.models import (
+    CareRequestRow,
+    KitVerificationRow,
+    RobotEventRow,
+    RobotTaskRow,
+    TaskStateTransitionRow,
+)
 from backend.db.session import get_session, init_db
 
 # States that free up the robot for a new request (mirrors the old JSON
@@ -175,6 +181,52 @@ def list_kit_verifications_for_task(task_id: str) -> list:
         session.close()
 
 
+# ---- task_state_transitions (PR8) -------------------------------------------
+
+TASK_STATE_TRANSITION_FIELDS = [
+    "id",
+    "task_id",
+    "request_id",
+    "from_state",
+    "to_state",
+    "trigger_type",
+    "triggered_by",
+    "reason",
+    "occurred_at",
+]
+
+
+def insert_task_state_transition(row: dict) -> None:
+    init_db()
+    session = get_session()
+    try:
+        session.add(TaskStateTransitionRow(**row))
+        session.commit()
+    finally:
+        session.close()
+
+
+def list_task_state_transitions(task_id: str | None = None, request_id: str | None = None) -> list:
+    """Ordered (oldest first) transition history, optionally filtered.
+
+    Used directly by tests/PR9 audit checks, and by PR11's
+    /analytics/state-durations, which needs the full ordered history per
+    task to compute how long each state was occupied.
+    """
+    init_db()
+    session = get_session()
+    try:
+        query = session.query(TaskStateTransitionRow)
+        if task_id is not None:
+            query = query.filter_by(task_id=task_id)
+        if request_id is not None:
+            query = query.filter_by(request_id=request_id)
+        rows = query.order_by(TaskStateTransitionRow.id).all()
+        return [_as_dict(r, TASK_STATE_TRANSITION_FIELDS) for r in rows]
+    finally:
+        session.close()
+
+
 # ---- robot_events (unchanged from PR2) --------------------------------------
 
 def append_log_entry(entry: dict) -> None:
@@ -222,4 +274,3 @@ def load_logs() -> list:
         ]
     finally:
         session.close()
-

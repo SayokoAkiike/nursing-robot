@@ -85,3 +85,27 @@ class RobotEventRow(Base):
     result = Column(String, nullable=True)
     message = Column(Text, nullable=True)
 
+
+class TaskStateTransitionRow(Base):
+    """PR8: structured, queryable history of every robot_tasks.state change.
+
+    `robot_events` (above) is the human-readable log used by the nurse
+    dashboard's log view. This table is a separate, analysis-oriented
+    record of the same underlying fact (a state changed) -- one row per
+    transition, with a machine-friendly `trigger_type`/`triggered_by`
+    instead of a free-text message, so it can be queried/aggregated
+    directly (see PR11's /analytics/state-durations) without parsing log
+    text.
+    """
+
+    __tablename__ = "task_state_transitions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(String, nullable=False, index=True)
+    request_id = Column(String, nullable=False, index=True)
+    from_state = Column(String, nullable=True)
+    to_state = Column(String, nullable=False)
+    trigger_type = Column(String, nullable=False)
+    triggered_by = Column(String, nullable=True)
+    reason = Column(Text, nullable=True)
+    occurred_at = Column(String, nullable=False)
