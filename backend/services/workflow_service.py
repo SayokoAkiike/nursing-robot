@@ -77,6 +77,7 @@ def create_request(request_type: str, patient_id: str = DEFAULT_PATIENT_ID) -> d
         raise DomainError(f"Unknown request_type: {request_type}")
     new_state = {
         "request_id": str(uuid.uuid4())[:8],
+        "request_type": request_type,
         "request": info["label"],
         "kit": info["kit"],
         "risk": info["risk"],
@@ -237,4 +238,5 @@ def cancel_request() -> dict:
         message="Request cancelled",
     )
     return new_state
+ 
  

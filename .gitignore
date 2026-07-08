@@ -3,23 +3,25 @@ data/shared_state.json
 data/robot_log.json
 shared_state.json
 robot_log.json
-
+data/*.db
+ 
 # Python
 __pycache__/
 *.pyc
 *.pyo
 .env
-
+ 
 # Streamlit
 .streamlit/
-
+ 
 # 生成物
 vision/qr_detection/qr_images/
-
+ 
 # バックアップ
 *.bak
-
+ 
 # OS
 .DS_Store
 .venv/
 .env
+ 
