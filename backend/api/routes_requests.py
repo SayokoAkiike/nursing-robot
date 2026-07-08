@@ -36,5 +36,5 @@ def get_request(request_id: str):
 
 @router.post("/requests/{request_id}/cancel")
 def cancel_request(request_id: str):
-    return workflow_service.cancel_request(request_id)
+    return workflow_service.cancel_request(request_id, actor="patient")
 

@@ -30,5 +30,5 @@ def reset(request_id: str):
 @router.post("/cancel")
 def cancel(request_id: str):
     """Nurse-side cancel (authenticated; only legal from early states)."""
-    return workflow_service.cancel_request(request_id)
+    return workflow_service.cancel_request(request_id, actor="nurse")
 

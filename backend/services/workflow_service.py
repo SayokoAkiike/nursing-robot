@@ -69,6 +69,38 @@ def _log(event_type: str, **fields) -> None:
     repositories.append_log_entry(entry)
 
 
+def _record_transition(
+    *,
+    task_id: str,
+    request_id: str,
+    from_state: str | None,
+    to_state: str,
+    trigger_type: str,
+    triggered_by: str | None = None,
+    reason: str | None = None,
+) -> None:
+    """PR8: structured counterpart to `_log()`.
+
+    `_log()` writes the human-readable robot_events row the nurse
+    dashboard's log view already shows; this writes the same fact (a state
+    changed) as a `task_state_transitions` row meant for querying/
+    aggregation (PR11's /analytics/state-durations) rather than display.
+    Called alongside `_log()`, never instead of it.
+    """
+    repositories.insert_task_state_transition(
+        {
+            "task_id": task_id,
+            "request_id": request_id,
+            "from_state": from_state,
+            "to_state": to_state,
+            "trigger_type": trigger_type,
+            "triggered_by": triggered_by,
+            "reason": reason,
+            "occurred_at": datetime.now().isoformat(),
+        }
+    )
+
+
 def _view(request_id: str) -> dict | None:
     """Join care_requests + robot_tasks into the legacy dict shape."""
     req = repositories.get_care_request(request_id)
@@ -186,6 +218,14 @@ def create_request(request_type: str, patient_id: str = DEFAULT_PATIENT_ID) -> d
         next_state="REQUEST_RECEIVED",
         message=f"{request_type} request created",
     )
+    _record_transition(
+        task_id=task_id,
+        request_id=request_id,
+        from_state=None,
+        to_state="REQUEST_RECEIVED",
+        trigger_type="request_created",
+        triggered_by="patient",
+    )
     return _view_or_error(request_id)
 
 
@@ -204,6 +244,15 @@ def advance_state(request_id: str, next_state: str) -> dict:
             next_state="ERROR",
             message="KIT_RELEASED attempted without nurse confirmation",
         )
+        _record_transition(
+            task_id=task["id"],
+            request_id=request_id,
+            from_state=current,
+            to_state="ERROR",
+            trigger_type="manual_transition",
+            triggered_by="nurse_token",
+            reason="KIT_RELEASED attempted without nurse confirmation",
+        )
         raise ForbiddenError("Nurse confirmation required before KIT_RELEASED")
 
     if allowed_next_state(current) != next_state:
@@ -216,6 +265,15 @@ def advance_state(request_id: str, next_state: str) -> dict:
             next_state="ERROR",
             message=f"Invalid transition {current} -> {next_state}",
         )
+        _record_transition(
+            task_id=task["id"],
+            request_id=request_id,
+            from_state=current,
+            to_state="ERROR",
+            trigger_type="manual_transition",
+            triggered_by="nurse_token",
+            reason=f"Invalid transition {current} -> {next_state}",
+        )
         raise DomainError(f"Invalid transition: {current} -> {next_state}")
 
     repositories.update_task_state(task["id"], next_state, now)
@@ -225,6 +283,16 @@ def advance_state(request_id: str, next_state: str) -> dict:
         task_id=task["id"],
         previous_state=current,
         next_state=next_state,
+    )
+    _record_transition(
+        task_id=task["id"],
+        request_id=request_id,
+        from_state=current,
+        to_state=next_state,
+        trigger_type="nurse_confirmation"
+        if (next_state == "KIT_RELEASED" and current == "WAITING_FOR_NURSE_CONFIRMATION")
+        else "manual_transition",
+        triggered_by="nurse_token",
     )
     if next_state == "COMPLETED":
         repositories.update_care_request_status(request_id, "COMPLETED", completed_at=now)
@@ -262,6 +330,15 @@ def verify_ids(request_id: str, patient_id: str, kit_id: str) -> dict:
             next_state="ERROR",
             message="patient_id mismatch",
         )
+        _record_transition(
+            task_id=task["id"],
+            request_id=request_id,
+            from_state="VERIFYING_PATIENT",
+            to_state="ERROR",
+            trigger_type="verification",
+            triggered_by="verification_service",
+            reason="patient_id mismatch",
+        )
         raise DomainError("patient_id mismatch")
 
     if kit_id != task.get("kit_id"):
@@ -284,6 +361,15 @@ def verify_ids(request_id: str, patient_id: str, kit_id: str) -> dict:
             previous_state="VERIFYING_PATIENT",
             next_state="ERROR",
             message="kit_id mismatch",
+        )
+        _record_transition(
+            task_id=task["id"],
+            request_id=request_id,
+            from_state="VERIFYING_PATIENT",
+            to_state="ERROR",
+            trigger_type="verification",
+            triggered_by="verification_service",
+            reason="kit_id mismatch",
         )
         raise DomainError("kit_id mismatch")
 
@@ -309,6 +395,14 @@ def verify_ids(request_id: str, patient_id: str, kit_id: str) -> dict:
             next_state=target,
             message=result["message"],
         )
+        _record_transition(
+            task_id=task["id"],
+            request_id=request_id,
+            from_state="VERIFYING_PATIENT",
+            to_state=target,
+            trigger_type="verification",
+            triggered_by="verification_service",
+        )
         return {"ok": True, "state": _view_or_error(request_id)}
 
     repositories.update_task_state(task["id"], "ERROR", now)
@@ -320,6 +414,15 @@ def verify_ids(request_id: str, patient_id: str, kit_id: str) -> dict:
         previous_state="VERIFYING_PATIENT",
         next_state="ERROR",
         message=result["message"],
+    )
+    _record_transition(
+        task_id=task["id"],
+        request_id=request_id,
+        from_state="VERIFYING_PATIENT",
+        to_state="ERROR",
+        trigger_type="verification",
+        triggered_by="verification_service",
+        reason=result["message"],
     )
     raise DomainError(result["message"])
 
@@ -336,6 +439,14 @@ def emergency_stop(request_id: str) -> dict:
         previous_state=prev,
         next_state="ERROR",
         message="Emergency stop triggered",
+    )
+    _record_transition(
+        task_id=task["id"],
+        request_id=request_id,
+        from_state=prev,
+        to_state="ERROR",
+        trigger_type="emergency_stop",
+        triggered_by="nurse_token",
     )
     return _view_or_error(request_id)
 
@@ -354,10 +465,18 @@ def reset(request_id: str) -> dict:
         next_state="IDLE",
         message="Reset to IDLE",
     )
+    _record_transition(
+        task_id=task["id"],
+        request_id=request_id,
+        from_state=prev,
+        to_state="IDLE",
+        trigger_type="reset",
+        triggered_by="nurse_token",
+    )
     return _view_or_error(request_id)
 
 
-def cancel_request(request_id: str) -> dict:
+def cancel_request(request_id: str, actor: str = "patient") -> dict:
     task = _require_task(request_id)
     now = datetime.now().isoformat()
     prev = task["state"]
@@ -373,5 +492,12 @@ def cancel_request(request_id: str) -> dict:
         next_state="IDLE",
         message="Request cancelled",
     )
+    _record_transition(
+        task_id=task["id"],
+        request_id=request_id,
+        from_state=prev,
+        to_state="IDLE",
+        trigger_type="patient_cancel" if actor == "patient" else "nurse_cancel",
+        triggered_by="patient" if actor == "patient" else "nurse_token",
+    )
     return _view_or_error(request_id)
-
