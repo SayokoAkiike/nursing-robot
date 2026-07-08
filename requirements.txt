@@ -39,3 +39,7 @@ psycopg2-binary==2.9.10
 ruff==0.15.20
 mypy==2.2.0
 pytest-cov==7.1.0
+
+# Docker config validation (PR13) -- tests/test_docker_config.py parses
+# docker-compose.yml
+PyYAML==6.0.2
