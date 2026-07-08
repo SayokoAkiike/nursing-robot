@@ -35,6 +35,19 @@ def _as_dict(row, fields) -> dict:
 
 CARE_REQUEST_FIELDS = ["id", "patient_id", "request_type", "priority", "status", "created_at", "completed_at"]
 ROBOT_TASK_FIELDS = ["id", "request_id", "robot_id", "state", "kit_id", "assigned_at", "updated_at"]
+KIT_VERIFICATION_FIELDS = [
+    "id",
+    "task_id",
+    "patient_id",
+    "kit_id",
+    "expected_patient_id",
+    "scanned_patient_id",
+    "expected_kit_id",
+    "scanned_kit_id",
+    "result",
+    "message",
+    "created_at",
+]
 
 
 # ---- care_requests ---------------------------------------------------------
@@ -69,6 +82,22 @@ def update_care_request_status(request_id: str, status: str, completed_at: str |
             if completed_at is not None:
                 row.completed_at = completed_at
             session.commit()
+    finally:
+        session.close()
+
+
+def list_all_care_requests() -> list:
+    """Every care_requests row, unfiltered (PR10: analytics aggregation).
+
+    Small-scale (demo/portfolio) data volume -- aggregation happens in
+    Python in `analytics_service`, not via SQL GROUP BY, so this just
+    hands back every row.
+    """
+    init_db()
+    session = get_session()
+    try:
+        rows = session.query(CareRequestRow).all()
+        return [_as_dict(r, CARE_REQUEST_FIELDS) for r in rows]
     finally:
         session.close()
 
@@ -144,6 +173,17 @@ def list_active_tasks() -> list:
         session.close()
 
 
+def list_all_robot_tasks() -> list:
+    """Every robot_tasks row, unfiltered (PR10: analytics aggregation)."""
+    init_db()
+    session = get_session()
+    try:
+        rows = session.query(RobotTaskRow).all()
+        return [_as_dict(r, ROBOT_TASK_FIELDS) for r in rows]
+    finally:
+        session.close()
+
+
 # ---- kit_verifications ------------------------------------------------------
 
 def insert_kit_verification(row: dict) -> None:
@@ -181,6 +221,17 @@ def list_kit_verifications_for_task(task_id: str) -> list:
             }
             for r in rows
         ]
+    finally:
+        session.close()
+
+
+def list_all_kit_verifications() -> list:
+    """Every kit_verifications row, unfiltered (PR10: analytics aggregation)."""
+    init_db()
+    session = get_session()
+    try:
+        rows = session.query(KitVerificationRow).order_by(KitVerificationRow.id).all()
+        return [_as_dict(r, KIT_VERIFICATION_FIELDS) for r in rows]
     finally:
         session.close()
 
