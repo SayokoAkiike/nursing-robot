@@ -1,4 +1,4 @@
-"""Read-only analytics endpoints (PR10).
+"""Read-only analytics endpoints (PR10, PR11).
 
 Unauthenticated like the other GET-only routes (`routes_logs.py`) -- these
 expose aggregate counts, not per-patient data, so the same trust boundary
@@ -21,3 +21,8 @@ def get_summary():
 @router.get("/verification-failures")
 def get_verification_failures():
     return analytics_service.verification_failures()
+
+
+@router.get("/state-durations")
+def get_state_durations():
+    return analytics_service.state_durations()
