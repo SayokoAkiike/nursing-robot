@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+ 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -5,8 +7,22 @@ from fastapi.responses import JSONResponse
 from backend.api import routes_logs, routes_requests, routes_tasks, routes_verification
 from backend.core.config import get_settings
 from backend.core.errors import DomainError
+from backend.db.session import init_db
  
-app = FastAPI(title="PreCare Dock API", version="0.4.0")
+ 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Create tables on boot if they don't exist yet.
+ 
+    A convenience for SQLite/local dev; in a real PostgreSQL deployment,
+    prefer running `alembic upgrade head` explicitly as part of the deploy
+    step instead of relying on this.
+    """
+    init_db()
+    yield
+ 
+ 
+app = FastAPI(title="PreCare Dock API", version="0.5.0", lifespan=lifespan)
  
 settings = get_settings()
 app.add_middleware(

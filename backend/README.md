@@ -17,7 +17,9 @@ backend/
     security.py                # 看護師トークン認証
     errors.py                  # 統一エラー型（DomainError系）
   db/
-    repositories.py            # 永続化ファサード（現状はJSON、PR2でPostgreSQLに差し替え）
+    session.py                  # SQLAlchemyエンジン/セッション（DATABASE_URL未設定ならSQLiteにフォールバック）
+    models.py                   # ORMモデル（care_requests, robot_events）
+    repositories.py             # 永続化ファサード（PR2よりSQLAlchemy経由でDB化）
   schemas/                     # Pydanticモデル（用途別）
     request.py / task.py / verification.py / event.py
   services/
@@ -27,6 +29,26 @@ backend/
 ```
  
 `robot_control/`・`vision/qr_detection/verify_patient_kit.py` は `ui/` からの参照のために残した後方互換シムです（実体は `backend/` 側）。
+ 
+## データベース
+ 
+デフォルトはSQLite（`data/precare.db`、設定不要）。PostgreSQLを使う場合:
+ 
+```bash
+docker-compose up -d
+cp .env.example .env  # DATABASE_URLのコメントを外す
+alembic upgrade head
+```
+ 
+テストは常にテストごとに独立したSQLiteファイルを使います（`tests/conftest.py`の`robot_storage`フィクスチャ）。CIでPostgreSQLコンテナを起動する必要はありません。
+ 
+スキーマ変更はAlembicで管理します:
+ 
+```bash
+alembic revision --autogenerate -m "変更内容"
+alembic upgrade head
+```
+ 
  
 ## 起動方法
  
@@ -59,4 +81,5 @@ backend/
 ## 注意
  
 このAPIは医療機器ではありません。研究・教育・コンテスト向けのプロトタイプです。
+ 
  
