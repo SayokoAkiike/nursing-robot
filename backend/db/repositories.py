@@ -12,8 +12,11 @@ from datetime import datetime, timedelta
 from backend.db.models import (
     CareRequestRow,
     KitVerificationRow,
+    NurseEscalationRow,
+    PatientInteractionRow,
     RobotEventRow,
     RobotTaskRow,
+    RoundingSessionRow,
     TaskStateTransitionRow,
 )
 from backend.db.session import get_session, init_db
@@ -35,6 +38,14 @@ def _as_dict(row, fields) -> dict:
     return {f: getattr(row, f) for f in fields}
 
 
+# NOTE (PR22): `care_requests` gained `source` / `rounding_session_id`
+# columns (backend/db/models.py) but they are deliberately *not* listed
+# here yet. `tests/test_repositories.py::test_insert_and_get_care_request`
+# asserts `get_care_request(...)` equals a REQUEST_ROW fixture with no
+# such keys; adding them here would require every existing caller of
+# `insert_care_request` to start passing them too. PR23 (which actually
+# reads/writes these columns from `rounding_service`) extends this list
+# and updates that fixture together, as one contained change.
 CARE_REQUEST_FIELDS = ["id", "patient_id", "request_type", "priority", "status", "created_at", "completed_at"]
 ROBOT_TASK_FIELDS = ["id", "request_id", "robot_id", "state", "kit_id", "assigned_at", "updated_at"]
 KIT_VERIFICATION_FIELDS = [
@@ -393,6 +404,214 @@ def shift_timestamps_for_request(request_id: str, delta_seconds: float) -> None:
         session.close()
 
 
+# ---- rounding_sessions / patient_interactions / nurse_escalations (PR22) ---
+#
+# Plain CRUD, same shape as every table above: services layer (PR23's
+# rounding_service) owns joining/interpreting these rows; this module just
+# persists and fetches them.
+
+ROUNDING_SESSION_FIELDS = [
+    "id",
+    "robot_id",
+    "room",
+    "patient_id",
+    "status",
+    "started_at",
+    "ended_at",
+    "interaction_summary",
+    "detected_need",
+    "escalation_level",
+    "created_at",
+    "updated_at",
+]
+
+PATIENT_INTERACTION_FIELDS = [
+    "id",
+    "rounding_session_id",
+    "patient_id",
+    "room",
+    "prompt",
+    "patient_response",
+    "input_mode",
+    "detected_need",
+    "confidence",
+    "created_at",
+]
+
+NURSE_ESCALATION_FIELDS = [
+    "id",
+    "rounding_session_id",
+    "request_id",
+    "patient_id",
+    "room",
+    "summary",
+    "priority",
+    "reason",
+    "suggested_action",
+    "status",
+    "created_at",
+    "acknowledged_at",
+    "acknowledged_by",
+]
+
+
+def insert_rounding_session(row: dict) -> None:
+    init_db()
+    session = get_session()
+    try:
+        session.add(RoundingSessionRow(**row))
+        session.commit()
+    finally:
+        session.close()
+
+
+def get_rounding_session(session_id: str) -> dict | None:
+    init_db()
+    session = get_session()
+    try:
+        row = session.get(RoundingSessionRow, session_id)
+        return _as_dict(row, ROUNDING_SESSION_FIELDS) if row else None
+    finally:
+        session.close()
+
+
+def update_rounding_session(
+    session_id: str,
+    *,
+    status: str | None = None,
+    patient_id: str | None = None,
+    interaction_summary: str | None = None,
+    detected_need: str | None = None,
+    escalation_level: str | None = None,
+    ended_at: "datetime | None" = None,
+    updated_at: "datetime | None" = None,
+) -> None:
+    """Partial update -- only fields explicitly passed (non-None) are
+    written. Mirrors `update_task_state`'s style but for the several
+    optional fields a rounding session accumulates as it progresses."""
+    init_db()
+    session = get_session()
+    try:
+        row = session.get(RoundingSessionRow, session_id)
+        if row is None:
+            return
+        if status is not None:
+            row.status = status
+        if patient_id is not None:
+            row.patient_id = patient_id
+        if interaction_summary is not None:
+            row.interaction_summary = interaction_summary
+        if detected_need is not None:
+            row.detected_need = detected_need
+        if escalation_level is not None:
+            row.escalation_level = escalation_level
+        if ended_at is not None:
+            row.ended_at = ended_at
+        if updated_at is not None:
+            row.updated_at = updated_at
+        session.commit()
+    finally:
+        session.close()
+
+
+def list_active_rounding_sessions(robot_id: str | None = None) -> list:
+    """Rounding sessions not yet COMPLETED/ERROR, optionally filtered by
+    robot. Mirrors `get_active_task_for_robot`'s per-robot concurrency
+    query, but returns a list (a robot could in principle have more than
+    one open session across rooms is *not* assumed here -- callers in
+    PR23's rounding_service enforce any single-active-session rule)."""
+    init_db()
+    session = get_session()
+    try:
+        query = session.query(RoundingSessionRow).filter(
+            RoundingSessionRow.status.notin_(["COMPLETED", "ERROR"])
+        )
+        if robot_id is not None:
+            query = query.filter(RoundingSessionRow.robot_id == robot_id)
+        rows = query.order_by(RoundingSessionRow.started_at).all()
+        return [_as_dict(r, ROUNDING_SESSION_FIELDS) for r in rows]
+    finally:
+        session.close()
+
+
+def insert_patient_interaction(row: dict) -> None:
+    init_db()
+    session = get_session()
+    try:
+        session.add(PatientInteractionRow(**row))
+        session.commit()
+    finally:
+        session.close()
+
+
+def list_patient_interactions(rounding_session_id: str) -> list:
+    init_db()
+    session = get_session()
+    try:
+        rows = (
+            session.query(PatientInteractionRow)
+            .filter_by(rounding_session_id=rounding_session_id)
+            .order_by(PatientInteractionRow.id)
+            .all()
+        )
+        return [_as_dict(r, PATIENT_INTERACTION_FIELDS) for r in rows]
+    finally:
+        session.close()
+
+
+def insert_nurse_escalation(row: dict) -> None:
+    init_db()
+    session = get_session()
+    try:
+        session.add(NurseEscalationRow(**row))
+        session.commit()
+    finally:
+        session.close()
+
+
+def get_nurse_escalation(escalation_id: str) -> dict | None:
+    init_db()
+    session = get_session()
+    try:
+        row = session.get(NurseEscalationRow, escalation_id)
+        return _as_dict(row, NURSE_ESCALATION_FIELDS) if row else None
+    finally:
+        session.close()
+
+
+def list_nurse_escalations(status: str | None = None) -> list:
+    """GET /escalations backing query. Newest-first is not assumed here --
+    PR24's route layer / nurse dashboard sorts PENDING to the top; this
+    just returns every row (optionally filtered by status) ordered by
+    creation."""
+    init_db()
+    session = get_session()
+    try:
+        query = session.query(NurseEscalationRow)
+        if status is not None:
+            query = query.filter(NurseEscalationRow.status == status)
+        rows = query.order_by(NurseEscalationRow.created_at).all()
+        return [_as_dict(r, NURSE_ESCALATION_FIELDS) for r in rows]
+    finally:
+        session.close()
+
+
+def acknowledge_nurse_escalation(
+    escalation_id: str, acknowledged_by: str, acknowledged_at: "datetime"
+) -> None:
+    init_db()
+    session = get_session()
+    try:
+        row = session.get(NurseEscalationRow, escalation_id)
+        if row is not None:
+            row.status = "ACKNOWLEDGED"
+            row.acknowledged_by = acknowledged_by
+            row.acknowledged_at = acknowledged_at
+            session.commit()
+    finally:
+        session.close()
+
+
 def delete_all_data() -> None:
     """Wipe every row from every table. Full reset, not a selective one --
     there's no column marking which rows are "seeded" vs real, so this is
@@ -401,11 +620,17 @@ def delete_all_data() -> None:
     init_db()
     session = get_session()
     try:
+        # PR22: new tables deleted first since care_requests /
+        # rounding_sessions FKs point *to* them being gone already would
+        # otherwise raise on backends that enforce FK constraints eagerly.
+        session.query(NurseEscalationRow).delete()
+        session.query(PatientInteractionRow).delete()
         session.query(TaskStateTransitionRow).delete()
         session.query(KitVerificationRow).delete()
         session.query(RobotEventRow).delete()
         session.query(RobotTaskRow).delete()
         session.query(CareRequestRow).delete()
+        session.query(RoundingSessionRow).delete()
         session.commit()
     finally:
         session.close()
