@@ -61,3 +61,18 @@ def get_logs():
     r = requests.get(f"{API_BASE_URL}/logs", timeout=_TIMEOUT)
     r.raise_for_status()
     return r.json()
+
+def get_escalations(status=None):
+    """GET /escalations. No status filter -> PENDING-first dashboard
+    ordering (see backend/services/escalation_service.py's
+    list_escalations_for_dashboard); a status filter -> that status only."""
+    params = {"status": status} if status else None
+    r = requests.get(f"{API_BASE_URL}/escalations", params=params, timeout=_TIMEOUT)
+    r.raise_for_status()
+    return r.json()
+
+def acknowledge_escalation(escalation_id, acknowledged_by):
+    r = requests.post(f"{API_BASE_URL}/escalations/{escalation_id}/ack",
+        headers=_nurse_headers(), json={"acknowledged_by": acknowledged_by}, timeout=_TIMEOUT)
+    r.raise_for_status()
+    return r.json()

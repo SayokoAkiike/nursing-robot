@@ -25,6 +25,24 @@ LABELS = {
     "wait_msg_ja":   "立ち上がらずお待ちください",
     "wait_msg_en":   "Please do not stand up.",
     "nurse_coming":  "A nurse will arrive shortly.",
+    # PR26: patient UI notice for a rounding-triggered escalation (see
+    # proposal doc section 6, "ロボットまたは看護師に通知しました。/
+    # 立ち上がらず、そのままお待ちください。"). wait_msg_ja above already
+    # covers the second line; this is only the first.
+    "escalation_notified": "ロボットまたは看護師に通知しました。",
+    # PR26: nurse dashboard Escalations section (proposal doc section 6).
+    "escalations_title":   "Escalations",
+    "escalations_empty":   "No pending escalations.",
+    "ack_button":          "Acknowledge",
+}
+
+# PR26: priority -> display color for the Escalations section. HIGH/URGENT
+# are meant to stand out (proposal doc: "HIGH / URGENT は目立つようにしてください").
+PRIORITY_COLOR = {
+    "URGENT": "#b91c1c",  # COLORS["error"]
+    "HIGH":   "#b45309",  # COLORS["warning"]
+    "MEDIUM": "#555555",  # COLORS["secondary"]
+    "LOW":    "#999999",  # COLORS["muted"]
 }
 
 # 共通CSS
