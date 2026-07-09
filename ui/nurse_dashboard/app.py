@@ -8,7 +8,7 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT_DIR))
 
 from robot_control.state_machine import STATE_LABELS as STATE_MESSAGES, ALLOWED_TRANSITIONS, DISPLAY_FLOW  # noqa: E402
-from ui.common.style import CSS, LABELS  # noqa: E402
+from ui.common.style import CSS, LABELS, PRIORITY_COLOR  # noqa: E402
 from ui.common import api_client  # noqa: E402
 
 st.set_page_config(page_title=LABELS["app_nurse"], layout="wide")
@@ -28,6 +28,55 @@ with col_h1:
     st.markdown("## PreCare Console")
 with col_h2:
     st.caption(datetime.now().strftime("%H:%M:%S"))
+
+# ---------------------------------------------------------------------------
+# PR26: Escalations section -- the queue of things a nurse needs to see/ack,
+# raised by a rounding session (backend/services/rounding_service.py /
+# escalation_service.py). Deliberately shown as its own section, separate
+# from the delivery task list below (proposal doc: "既存のタスク一覧とは別に、
+# 「看護師が見るべき通知キュー」として表示したい"), and placed above it so a
+# HIGH/URGENT notification isn't buried under in-progress deliveries.
+# ---------------------------------------------------------------------------
+st.markdown(f"### {LABELS['escalations_title']}")
+try:
+    escalations = api_client.get_escalations()
+except Exception as e:
+    st.error(f"Backend not reachable: {e}")
+    escalations = []
+
+if not escalations:
+    st.caption(LABELS["escalations_empty"])
+else:
+    for esc in escalations:
+        priority = esc.get("priority", "LOW")
+        color = PRIORITY_COLOR.get(priority, PRIORITY_COLOR["LOW"])
+        status = esc.get("status", "PENDING")
+        esc_id = esc.get("id", "-")
+        created_at = esc.get("created_at", "")
+        time_str = datetime.fromisoformat(created_at).strftime("%H:%M:%S") if created_at else "-"
+
+        with st.container(border=True):
+            st.markdown(
+                f"<div style='display:flex;align-items:center;gap:8px;'>"
+                f"<span style='background:{color};color:#fff;border-radius:4px;"
+                f"padding:2px 8px;font-size:12px;font-weight:700;'>{priority}</span>"
+                f"<span style='font-weight:600;'>Room {esc.get('room', '-')}</span>"
+                f"<span style='color:#888;'>{esc.get('patient_id', '-')}</span>"
+                f"<span style='color:#888;margin-left:auto;'>{time_str} · {status}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(f"{esc.get('summary', '')}")
+            if esc.get("suggested_action"):
+                st.caption(f"Suggested action: {esc['suggested_action']}")
+            if status == "PENDING":
+                if st.button(
+                    LABELS["ack_button"], key=f"ack_{esc_id}", use_container_width=False
+                ):
+                    if call_api(api_client.acknowledge_escalation, esc_id, "nurse_dashboard"):
+                        st.rerun()
+st.divider()
+
 
 try:
     tasks = api_client.get_requests()

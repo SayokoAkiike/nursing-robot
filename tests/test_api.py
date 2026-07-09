@@ -21,6 +21,12 @@ def test_patient_ui_importable():
     assert spec is not None
 
 
+def test_nurse_dashboard_importable():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("nurse_app", "ui/nurse_dashboard/app.py")
+    assert spec is not None
+
+
 def test_get_state(api_client):
     assert api_client.get("/state").json()["robot_state"] == "IDLE"
 

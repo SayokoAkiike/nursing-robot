@@ -23,12 +23,35 @@ except Exception as e:
 
 my_task = next((t for t in tasks if t.get("patient_id") == patient_id), None)
 
+# PR26: a rounding session (backend/services/rounding_service.py) can
+# raise a nurse escalation for this patient independent of any
+# care_request the patient-tablet flow tracks -- e.g. the robot heard
+# "トイレに行きたいです" during rounding and is now waiting on a nurse,
+# with no delivery request involved at all. Checked before the existing
+# my_task branch below so the safety notice ("立ち上がらずお待ちください")
+# shows regardless of whether a delivery task also happens to be active.
+try:
+    pending_escalations = api_client.get_escalations(status="PENDING")
+except Exception:
+    pending_escalations = []
+my_escalation = next(
+    (e for e in pending_escalations if e.get("patient_id") == patient_id), None
+)
+
 st.markdown("## PreCare Request")
 p_info = PATIENTS.get(patient_id, {})
 st.caption(f"Room {p_info.get('room', '?')} — {p_info.get('display_name', patient_id)}")
 st.divider()
 
-if my_task:
+if my_escalation:
+    st.markdown(f'''<div style="border:1px solid #d0d0d0;border-radius:8px;padding:2rem;text-align:center;background:#fafafa;">
+<p style="font-size:1.1rem;font-weight:600">{LABELS["escalation_notified"]}</p>
+<p style="font-size:1.3rem;font-weight:600">{LABELS["wait_msg_ja"]}</p>
+<p style="color:#555">{LABELS["wait_msg_en"]}</p>
+<p style="color:#888">{LABELS["nurse_coming"]}</p></div>''', unsafe_allow_html=True)
+    time.sleep(3)
+    st.rerun()
+elif my_task:
     robot_state = my_task.get("robot_state", "IDLE")
     request_id  = my_task.get("request_id", "")
     if robot_state not in ["IDLE", "COMPLETED", "ERROR"]:
