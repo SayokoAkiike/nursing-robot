@@ -5,6 +5,12 @@ the exact same client can be pointed at either a live server
 (`base_url="http://localhost:8000"`) or, in tests, directly at the FastAPI
 app in-process via `httpx.ASGITransport` -- no real network call or
 subprocess needed to exercise this module's request/response handling.
+
+PR19 (`backend/scripts/run_simulated_delivery.py`) reuses this same
+client for request creation too, so the whole simulated delivery goes
+through the one HTTP surface a real robot or the nurse dashboard would
+use -- no separate in-process shortcut that could drift from what's
+actually exposed over the network.
 """
 from __future__ import annotations
 
@@ -57,6 +63,12 @@ class VerificationClient:
                 status_code=response.status_code,
             )
         return response.json()
+
+    def create_request(self, request_type: str, patient_id: "str | None" = None) -> dict:
+        body: dict = {"request_type": request_type}
+        if patient_id is not None:
+            body["patient_id"] = patient_id
+        return self._request("POST", "/requests", json=body)
 
     def get_state(self) -> dict:
         return self._request("GET", "/state")
