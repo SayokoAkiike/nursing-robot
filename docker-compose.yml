@@ -29,5 +29,20 @@ services:
       db:
         condition: service_healthy
 
+  grafana:
+    image: grafana/grafana-oss:11.4.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   precare_pgdata:
