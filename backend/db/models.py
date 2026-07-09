@@ -43,6 +43,27 @@ portability the previous String columns were chosen for.
 
 FK constraints are new in PR15 too (previously request_id/task_id were
 plain String columns with no DB-level referential integrity).
+
+PR22 ("domain/rounding-models") adds three new, purely additive tables for
+the rounding/check-in workflow proposed alongside the existing
+request-driven delivery workflow:
+
+  - `rounding_sessions`: one row per robot rounding pass through a room.
+  - `patient_interactions`: one row per prompt/response exchange within a
+    rounding session (voice/tablet/simulated/manual input_mode).
+  - `nurse_escalations`: the queue of things a nurse needs to see/ack,
+    raised either from a rounding session or (in principle) manually.
+
+`care_requests` also gains two new nullable columns, `source` and
+`rounding_session_id`, so a request can record whether it came from the
+patient tablet, a robot's rounding conversation, a manual nurse entry, or
+a demo seed script -- and, if it came from rounding, which session raised
+it. Both are nullable with no new NOT NULL/default constraints on the
+existing table, so this migration never touches the shape of existing
+rows; the `ROUNDING_ALLOWED_TRANSITIONS` state machine and
+`rounding_service` module built on top of these tables are introduced in
+PR23, kept deliberately separate from `ALLOWED_TRANSITIONS` /
+`robot_tasks` (see `backend/services/robot_service.py` for why).
 """
 from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import declarative_base
@@ -63,6 +84,19 @@ class CareRequestRow(Base):
     status = Column(String, nullable=False, default="PENDING")
     created_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
+    # PR22: origin of the request. Nullable (and left unbackfilled for
+    # existing rows) rather than NOT NULL + default, so this migration
+    # cannot fail against any pre-existing data -- callers that care about
+    # provenance (workflow_service.create_request, the future
+    # rounding_service) always pass it explicitly going forward.
+    # Expected values: "patient_tablet" | "robot_rounding" | "nurse_manual"
+    # | "demo_seed".
+    source = Column(String, nullable=True)
+    # PR22: set only when source == "robot_rounding" -- the rounding
+    # session whose need-classification produced this request.
+    rounding_session_id = Column(
+        String, ForeignKey("rounding_sessions.id"), nullable=True
+    )
 
 
 class RobotTaskRow(Base):
@@ -155,3 +189,97 @@ class TaskStateTransitionRow(Base):
     triggered_by = Column(String, nullable=True)
     reason = Column(Text, nullable=True)
     occurred_at = Column(DateTime, nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# PR22: rounding / check-in workflow tables (additive; see module docstring)
+# ---------------------------------------------------------------------------
+
+
+class RoundingSessionRow(Base):
+    """One row per robot rounding pass through a room.
+
+    `status` holds the rounding-side finite-state-machine value from
+    `ROUNDING_ALLOWED_TRANSITIONS` (backend/services/robot_service.py,
+    PR23) -- deliberately a separate value space from `robot_tasks.state`,
+    since a rounding session and a delivery task are different things that
+    can coexist (a rounding session's need-classification can spawn a
+    `care_requests` row, which in turn gets its own `robot_tasks` row).
+    """
+
+    __tablename__ = "rounding_sessions"
+    __table_args__ = (Index("ix_rounding_sessions_robot_id", "robot_id"),)
+
+    id = Column(String, primary_key=True)
+    robot_id = Column(String, nullable=False)
+    room = Column(String, nullable=False)
+    patient_id = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="ROUNDING")
+    started_at = Column(DateTime, nullable=True)
+    ended_at = Column(DateTime, nullable=True)
+    interaction_summary = Column(Text, nullable=True)
+    detected_need = Column(String, nullable=True)
+    escalation_level = Column(String, nullable=True)
+    created_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, nullable=True)
+
+
+class PatientInteractionRow(Base):
+    """One row per prompt/response exchange within a rounding session.
+
+    `input_mode` is expected to be one of "voice" | "tablet" | "simulated"
+    | "manual". Real speech recognition is out of scope for PR22-PR26 --
+    "simulated" and "manual" are the only modes actually produced by the
+    scripts/UI added in this phase; "voice" and "tablet" are reserved so
+    the schema doesn't need another migration once real input lands.
+    """
+
+    __tablename__ = "patient_interactions"
+    __table_args__ = (
+        Index("ix_patient_interactions_rounding_session_id", "rounding_session_id"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    rounding_session_id = Column(
+        String, ForeignKey("rounding_sessions.id"), nullable=False
+    )
+    patient_id = Column(String, nullable=True)
+    room = Column(String, nullable=True)
+    prompt = Column(Text, nullable=True)
+    patient_response = Column(Text, nullable=True)
+    input_mode = Column(String, nullable=False, default="simulated")
+    detected_need = Column(String, nullable=True)
+    confidence = Column(String, nullable=True)
+    created_at = Column(DateTime, nullable=True)
+
+
+class NurseEscalationRow(Base):
+    """The queue of things a nurse needs to see and acknowledge.
+
+    `request_id` is nullable: an escalation can exist purely as a
+    notification (route == NURSE_NOTIFICATION, no delivery involved) with
+    no corresponding `care_requests` row, or it can be raised alongside one
+    (route == DELIVERY_REQUIRED plus a same-visit notification).
+    """
+
+    __tablename__ = "nurse_escalations"
+    __table_args__ = (
+        Index("ix_nurse_escalations_rounding_session_id", "rounding_session_id"),
+        Index("ix_nurse_escalations_status", "status"),
+    )
+
+    id = Column(String, primary_key=True)
+    rounding_session_id = Column(
+        String, ForeignKey("rounding_sessions.id"), nullable=False
+    )
+    request_id = Column(String, ForeignKey("care_requests.id"), nullable=True)
+    patient_id = Column(String, nullable=True)
+    room = Column(String, nullable=True)
+    summary = Column(Text, nullable=False)
+    priority = Column(String, nullable=False)
+    reason = Column(Text, nullable=True)
+    suggested_action = Column(Text, nullable=True)
+    status = Column(String, nullable=False, default="PENDING")
+    created_at = Column(DateTime, nullable=True)
+    acknowledged_at = Column(DateTime, nullable=True)
+    acknowledged_by = Column(String, nullable=True)
