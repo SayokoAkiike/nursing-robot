@@ -65,8 +65,11 @@ flowchart LR
 | バックエンドAPIのDocker化（`docker-compose up`でDB+APIを一括起動） | `Dockerfile`, `docker-compose.yml` | ✅ |
 | ヘッドレスPyBulletシミュレーション（ドック→ベッドサイド移動、QRオーバーレイ、既存perceptionパイプラインでの照合） | `perception/pybullet_source.py` | ✅ |
 | シミュレーション配送フロー一括駆動（安全確認ゲートは既定で人間待ち） | `backend/scripts/run_simulated_delivery.py` | ✅ |
+| DB整合性制約（DateTime統一・FK・ロボット単位同時タスク数の部分ユニークインデックス） | `backend/db/models.py`, `alembic/` | ✅ |
+| Grafanaダッシュボード（Analytics APIと同内容をSQLで可視化、`docker-compose up`で自動プロビジョニング） | `grafana/provisioning/` | ✅ |
+| PyBullet GUIでのローカル目視デモ | `backend/scripts/run_gui_demo.py` | ✅ |
 | 品質管理（ruff / mypy / pytest-cov / CI） | `ruff.toml`, `mypy.ini`, `.coveragerc`, `.github/workflows/pytest.yml` | ✅ |
-| pytest テスト（145件） | `tests/` （API/workflow service/state machine/repositories/verification/perception/vision/analytics/Docker設定/PyBulletシミュレーション） | ✅ |
+| pytest テスト（159件） | `tests/` （API/workflow service/state machine/repositories/verification/perception/vision/analytics/Docker設定/PyBulletシミュレーション/Grafana設定/GUIデモ） | ✅ |
 
 ## ❌ 未実装（今後の予定）
 
@@ -74,7 +77,6 @@ flowchart LR
 |------|------|------------|
 | 実カメラでのリアルタイムQRスキャン | 合成動画/画像ディレクトリ/PyBulletシミュレーション入力では検証済み。実機Webカメラでの動作は未検証（`WebcamSource`自体はCodespacesのような画面なし環境では動かせない） | Phase 4 |
 | ロボットの物理制御・ナビゲーション | PyBulletシーン内では`resetBasePositionAndOrientation`で位置を直接設定しているのみで、ホイールや関節による本物の駆動制御はまだ無い | Phase 4 |
-| PyBullet GUIでの目視デモ | ヘッドレス(`p.DIRECT`)のみ対応。`p.GUI`によるローカル画面表示は未実装（Codespacesは画面なしのため、実装しても検証はローカル環境でしかできない） | Phase 4 |
 | マルチロボット・複数病棟対応 | 未着手 | Phase 5 |
 
 ## 🚀 Quick Start
@@ -98,7 +100,7 @@ pytest tests/ -v
 docker-compose up --build
 ```
 
-`db`（`postgres:16-alpine`）と`backend`（このリポジトリの`Dockerfile`からビルドしたFastAPI）の2サービスが、`backend`が`db`のヘルスチェック通過を待ってから順に起動する。バックエンドは `http://localhost:8000` で待ち受け（Swagger UIは `/docs`）。UI（Streamlit）はcomposeに含めていないので、必要ならローカルで別途起動する（上のQuick Start参照、`DATABASE_URL`を`.env`で`postgresql+psycopg2://precare:precare@localhost:5432/precare`に向ければ同じDBを共有できる）。
+`db`（`postgres:16-alpine`）・`backend`（このリポジトリの`Dockerfile`からビルドしたFastAPI）・`grafana`（`grafana-oss`、`db`宛のPostgreSQLデータソースとダッシュボード3枚を自動プロビジョニング、PR16）の3サービスが、`db`のヘルスチェック通過を待ってから`backend`/`grafana`が起動する。バックエンドは `http://localhost:8000` で待ち受け（Swagger UIは `/docs`）。Grafanaは `http://localhost:3000` （admin/admin、または匿名Viewerアクセス）で、手動セットアップなしに「PreCareBot」フォルダにダッシュボードが最初から表示される。UI（Streamlit）はcomposeに含めていないので、必要ならローカルで別途起動する（上のQuick Start参照、`DATABASE_URL`を`.env`で`postgresql+psycopg2://precare:precare@localhost:5432/precare`に向ければ同じDBを共有できる）。
 
 ```bash
 docker-compose down
@@ -130,7 +132,7 @@ python -m backend.scripts.reset_demo_data
 
 ## 🗂️ データモデル
 
-`backend/db/models.py`で定義される5テーブル。列の型はSQLite/PostgreSQL両対応のため汎用（String/Integer/Text）にしている。以下は論理的な関連を示すもので、SQLAlchemyレベルの`ForeignKey`制約は現状未設定（アプリケーション側で整合性を保証している）。
+`backend/db/models.py`で定義される5テーブル。タイムスタンプ列は全て`DateTime`型（PR15でSQLite/PostgreSQL両対応のまま`String`から統一）。以下のER図が示す`request_id`/`task_id`はSQLAlchemyレベルの`ForeignKey`制約として実際に強制されており（PR15）、`robot_tasks`には「ロボット単位で非終端状態のタスクは同時に1件まで」という安全制約を守るための部分ユニークインデックス（`UNIQUE(robot_id) WHERE state NOT IN ('IDLE','COMPLETED','ERROR')`）も張られている。
 
 ```mermaid
 erDiagram
@@ -146,8 +148,8 @@ erDiagram
         string request_type
         string priority
         string status
-        string created_at
-        string completed_at
+        datetime created_at
+        datetime completed_at
     }
     ROBOT_TASKS {
         string id PK
@@ -155,8 +157,8 @@ erDiagram
         string robot_id
         string state
         string kit_id
-        string assigned_at
-        string updated_at
+        datetime assigned_at
+        datetime updated_at
     }
     KIT_VERIFICATIONS {
         int id PK
@@ -167,7 +169,7 @@ erDiagram
         string scanned_kit_id
         string result
         text message
-        string created_at
+        datetime created_at
     }
     TASK_STATE_TRANSITIONS {
         int id PK
@@ -178,13 +180,13 @@ erDiagram
         string trigger_type
         string triggered_by
         text reason
-        string occurred_at
+        datetime occurred_at
     }
     ROBOT_EVENTS {
         int id PK
         string request_id
         string task_id
-        string timestamp
+        datetime timestamp
         string event_type
         text message
     }
@@ -253,6 +255,25 @@ python -m backend.scripts.reset_demo_data --yes
 
 ---
 
+## 📈 モニタリング（Grafana、PR16）
+
+`docker-compose up`すると、`/analytics/*`と同じ内容をSQLで直接可視化するGrafanaダッシュボードが3枚、手動セットアップなしで最初から使える状態になる（`grafana/provisioning/`でPostgreSQLデータソースとダッシュボードJSONを自動プロビジョニング）。
+
+| ダッシュボード | 内容 |
+|---------------|------|
+| 完了/キャンセル数の推移 | `care_requests`を日次集計した完了・キャンセル件数の推移 |
+| QR照合失敗率 | `kit_verifications`の全体NG率＋失敗理由（`message`）別の内訳 |
+| 状態別平均滞在時間 | `task_state_transitions`に対する`LEAD()`ウィンドウ関数で、`/analytics/state-durations`と同じロジックをSQLで再現 |
+
+```bash
+docker-compose up --build
+python -m backend.scripts.seed_demo_data --days 14   # ダッシュボードに表示するデータが要る場合
+```
+
+`http://localhost:3000` を開く（admin/adminでログイン、または匿名Viewerアクセスでもダッシュボード閲覧は可能）。
+
+---
+
 ## 🤖 シミュレーション（Phase 4）
 
 物理ロボットは無いが、ヘッドレスPyBullet(`p.DIRECT`、画面表示なしでCI/Codespacesでも動く)上でドック位置からベッドサイド位置まで移動する簡易な物理シーンを組み、そこで撮影したフレームを既存のperceptionパイプライン(`perception/qr_detector.py`)にそのまま流し込んで照合できる。
@@ -284,6 +305,17 @@ python -m backend.scripts.run_simulated_delivery --nurse-token $NURSE_TOKEN
 python -m backend.scripts.run_simulated_delivery --nurse-token $NURSE_TOKEN --auto-confirm
 ```
 
+### ローカルGUIデモ（`backend/scripts/run_gui_demo.py`、PR20）
+
+上記は全てヘッドレス（`p.DIRECT`、画面表示なし）で、CI/Codespacesでも動く。ロボットが実際に動く様子を画面で見たい場合は、ディスプレイのあるローカルマシン限定で以下を実行する（**Codespacesでは動かない**）。
+
+```bash
+python -m backend.scripts.run_gui_demo
+python -m backend.scripts.run_gui_demo --steps 200 --speed 2.0
+```
+
+PyBulletのGUIウィンドウが開き、ドック位置からベッドサイド位置までロボットが移動する様子を見られる。QRオーバーレイはレンダリング後のフレームへの2D合成であり、ライブのGUIウィンドウには映らない（見た目のデモ専用で、`perception`パイプラインは通らない。QR照合込みの動作確認は`run_simulated_delivery.py`を使う）。
+
 ---
 
 ## 🔌 API エンドポイント
@@ -312,7 +344,7 @@ python -m backend.scripts.run_simulated_delivery --nurse-token $NURSE_TOKEN --au
 ## ⚠️ Current Limitations
 
 - 1ロボットにつき同時にアクティブなタスクは1件まで（`robot_id`単位。デフォルトロボットは1台のみ運用中）
-- PostgreSQL/SQLAlchemy永続化（`care_requests`/`robot_tasks`/`kit_verifications`/`robot_events`/`task_state_transitions`）。テーブル間のリレーションはアプリケーション側で保証しており、DBレベルの外部キー制約は未設定
+- PostgreSQL/SQLAlchemy永続化（`care_requests`/`robot_tasks`/`kit_verifications`/`robot_events`/`task_state_transitions`）。テーブル間の外部キー制約とロボット単位の同時タスク数制約はDBレベルで強制（PR15）
 - QR照合はダッシュボード上／PyBulletシミュレーション上でシミュレート
 - 物理制御・ナビゲーションは未実装（PyBulletシーン内でも位置を直接設定しているのみ）
 - Dockerイメージはローカル/デモ用のcomposeスタック向けで、本番デプロイ向けの構成（secrets管理、`alembic upgrade head`の明示実行など）は別途必要
@@ -327,7 +359,7 @@ python -m backend.scripts.run_simulated_delivery --nurse-token $NURSE_TOKEN --au
 | Phase 1–2 | API設計・UI分離・ステートマシン | ✅ |
 | Phase 3 | PostgreSQL化・タスクリソースモデル・Perception・合成QRデモ・評価ベンチマーク・CI/品質整備 | ✅ |
 | Phase 3.5 | 状態遷移履歴・QR照合詳細化・Analytics API・デモデータ・Docker化・README刷新 | ✅ |
-| Phase 4 | ヘッドレスPyBulletシミュレーション基盤・QRオーバーレイ・配送フロー一括駆動（pytest 145件）。実カメラ対応／物理制御（ホイール・関節）／GUI目視デモは未着手 | 🚧 一部完了 |
+| Phase 4 | ヘッドレスPyBulletシミュレーション基盤・QRオーバーレイ・配送フロー一括駆動・DB整合性制約（DateTime/FK/部分ユニークインデックス）・Grafanaダッシュボード・ローカルGUIデモ（pytest 159件）。実カメラ対応／物理制御（ホイール・関節）は未着手 | 🚧 ほぼ完了 |
 | Phase 5 | 実機MVP・マルチロボット・LeRobot | 📋 |
 
 ---
