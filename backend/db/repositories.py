@@ -38,15 +38,23 @@ def _as_dict(row, fields) -> dict:
     return {f: getattr(row, f) for f in fields}
 
 
-# NOTE (PR22): `care_requests` gained `source` / `rounding_session_id`
-# columns (backend/db/models.py) but they are deliberately *not* listed
-# here yet. `tests/test_repositories.py::test_insert_and_get_care_request`
-# asserts `get_care_request(...)` equals a REQUEST_ROW fixture with no
-# such keys; adding them here would require every existing caller of
-# `insert_care_request` to start passing them too. PR23 (which actually
-# reads/writes these columns from `rounding_service`) extends this list
-# and updates that fixture together, as one contained change.
-CARE_REQUEST_FIELDS = ["id", "patient_id", "request_type", "priority", "status", "created_at", "completed_at"]
+# PR23: `source` / `rounding_session_id` now exposed -- `workflow_service.
+# create_request()` writes them on every call (default source=
+# "patient_tablet"), so `test_repositories.py`'s REQUEST_ROW fixture is
+# updated in the same commit to include them (both None there, since that
+# fixture inserts directly via `insert_care_request` without going through
+# `create_request`).
+CARE_REQUEST_FIELDS = [
+    "id",
+    "patient_id",
+    "request_type",
+    "priority",
+    "status",
+    "created_at",
+    "completed_at",
+    "source",
+    "rounding_session_id",
+]
 ROBOT_TASK_FIELDS = ["id", "request_id", "robot_id", "state", "kit_id", "assigned_at", "updated_at"]
 KIT_VERIFICATION_FIELDS = [
     "id",

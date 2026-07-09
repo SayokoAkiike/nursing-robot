@@ -16,6 +16,13 @@ REQUEST_ROW = {
     "status": "ASSIGNED",
     "created_at": datetime(2026, 7, 8, 0, 0, 0),
     "completed_at": None,
+    # PR23: CARE_REQUEST_FIELDS now exposes these two columns (see
+    # repositories.py). This fixture inserts directly via
+    # insert_care_request (not through workflow_service.create_request),
+    # so they're left unset/None here, same as before this column pair
+    # existed at all.
+    "source": None,
+    "rounding_session_id": None,
 }
 
 TASK_ROW = {

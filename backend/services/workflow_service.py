@@ -186,7 +186,19 @@ def _view_or_error(request_id: str) -> dict:
     return view
 
 
-def create_request(request_type: str, patient_id: str = DEFAULT_PATIENT_ID) -> dict:
+def create_request(
+    request_type: str,
+    patient_id: str = DEFAULT_PATIENT_ID,
+    source: str = "patient_tablet",
+    rounding_session_id: str | None = None,
+) -> dict:
+    """`source` / `rounding_session_id` are PR23 additions (columns added
+    to `care_requests` in PR22 but left unexposed until a real caller
+    needed them -- see the NOTE in `backend/db/repositories.py`).
+    `rounding_service.require_delivery()` is the first caller to pass
+    `source="robot_rounding"`; every existing caller (the patient UI via
+    `routes_requests.py`, `backend/scripts/*`) keeps the default of
+    "patient_tablet" and needs no changes."""
     if repositories.get_active_task_for_robot(DEFAULT_ROBOT_ID) is not None:
         raise ConflictError("Another request is in progress")
     info = REQUEST_TYPES.get(request_type)
@@ -206,6 +218,8 @@ def create_request(request_type: str, patient_id: str = DEFAULT_PATIENT_ID) -> d
             "status": "ASSIGNED",
             "created_at": now,
             "completed_at": None,
+            "source": source,
+            "rounding_session_id": rounding_session_id,
         }
     )
     repositories.insert_robot_task(
