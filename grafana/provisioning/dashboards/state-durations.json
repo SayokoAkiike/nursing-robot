@@ -1,0 +1,31 @@
+{
+  "uid": "precare-state-durations",
+  "title": "PreCareBot: 状態別平均滞在時間",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-30d", "to": "now" },
+  "timezone": "browser",
+  "tags": ["precarebot"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "bargauge",
+      "title": "状態ごとの平均滞在秒数",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "precare-postgres" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT\n  to_state AS state,\n  AVG(EXTRACT(EPOCH FROM (next_occurred_at - occurred_at))) AS avg_seconds\nFROM (\n  SELECT\n    task_id,\n    to_state,\n    occurred_at,\n    LEAD(occurred_at) OVER (PARTITION BY task_id ORDER BY occurred_at) AS next_occurred_at\n  FROM task_state_transitions\n) t\nWHERE next_occurred_at IS NOT NULL\nGROUP BY to_state\nORDER BY avg_seconds DESC",
+          "rawQuery": true
+        }
+      ]
+    }
+  ]
+}

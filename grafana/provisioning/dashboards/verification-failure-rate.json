@@ -1,0 +1,46 @@
+{
+  "uid": "precare-verification-failure-rate",
+  "title": "PreCareBot: QR照合失敗率",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-30d", "to": "now" },
+  "timezone": "browser",
+  "tags": ["precarebot"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "照合失敗率 (全期間)",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "precare-postgres" },
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "decimals": 1 },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT\n  100.0 * SUM(CASE WHEN result = 'NG' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0) AS failure_rate_pct\nFROM kit_verifications",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "失敗理由の内訳",
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "precare-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT\n  message AS failure_type,\n  COUNT(*) AS count\nFROM kit_verifications\nWHERE result = 'NG'\nGROUP BY message\nORDER BY count DESC",
+          "rawQuery": true
+        }
+      ]
+    }
+  ]
+}

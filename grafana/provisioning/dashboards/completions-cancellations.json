@@ -1,0 +1,48 @@
+{
+  "uid": "precare-completions-cancellations",
+  "title": "PreCareBot: 完了/キャンセル数の推移",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "tags": [
+    "precarebot"
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "日次 完了 / キャンセル件数",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "postgres",
+        "uid": "precare-postgres"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT\n  $__timeGroupAlias(completed_at,'1d'),\n  SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed,\n  SUM(CASE WHEN status = 'CANCELLED' THEN 1 ELSE 0 END) AS cancelled\nFROM care_requests\nWHERE completed_at IS NOT NULL AND $__timeFilter(completed_at)\nGROUP BY 1\nORDER BY 1",
+          "rawQuery": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars"
+          }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}
