@@ -3,8 +3,9 @@
 Abstracts over where camera frames come from so `qr_detector` /
 `run_perception` don't need to know whether they're reading a live webcam,
 a recorded video file (e.g. the synthetic QR demo video planned for PR5),
-or a plain directory of image frames (handy for tests and for scripted
-demos without needing an encoded video file at all).
+a plain directory of image frames (handy for tests and for scripted demos
+without needing an encoded video file at all), or (PR17) a headless
+PyBullet physics scene.
 """
 from __future__ import annotations
 
@@ -118,12 +119,17 @@ def open_source(spec: str) -> FrameSource:
     """Parse a --source CLI argument into a FrameSource.
 
     Accepted forms:
-      "webcam:0"      -> WebcamSource(0)
-      "/path/to/dir"  -> ImageDirectorySource(...)
-      "/path/to.mp4"  -> VideoFileSource(...)
+      "webcam:0"          -> WebcamSource(0)
+      "pybullet:delivery" -> PyBulletSource("delivery") (PR17)
+      "/path/to/dir"      -> ImageDirectorySource(...)
+      "/path/to.mp4"      -> VideoFileSource(...)
     """
     if spec.startswith("webcam:"):
         return WebcamSource(int(spec.split(":", 1)[1]))
+    if spec.startswith("pybullet:"):
+        from perception.pybullet_source import PyBulletSource
+
+        return PyBulletSource(spec.split(":", 1)[1])
     if os.path.isdir(spec):
         return ImageDirectorySource(spec)
     return VideoFileSource(spec)
