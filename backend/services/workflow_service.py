@@ -18,14 +18,25 @@ Concurrency rule: `create_request` raises ConflictError if
 -- i.e. at most one non-terminal task per robot. This is the exact rule the
 old JSON singleton enforced (see `backend/db/repositories.py`'s
 NON_BLOCKING_TASK_STATES docstring), just expressed per `robot_id` instead
-of as an unconditional global. `tests/test_workflow_service.py::
-test_concurrency_guard_is_per_robot_not_global` is the regression test
-proving this is no longer a hardcoded singleton.
+of as an unconditional global. Since PR15 this is also enforced by a
+partial unique DB index (`robot_tasks.ux_robot_tasks_active_robot`), so a
+race between two concurrent create_request calls can no longer both
+succeed -- this check-then-act remains as a fast, friendly pre-check that
+raises the same ConflictError callers already expect, rather than a raw
+IntegrityError bubbling up from a DB-level race loser.
+`tests/test_workflow_service.py::test_concurrency_guard_is_per_robot_not_
+global` is the regression test proving this is no longer a hardcoded
+singleton.
 
 Unlike the JSON/singleton versions, cancelling or resetting a request does
 not erase it: `get_request(request_id)` keeps working for old request_ids
 after their task has gone terminal, which is strictly more useful for a
 real audit trail.
+
+PR15: timestamps are now real `datetime` objects (matching the DateTime
+columns in `backend/db/models.py`), not `.isoformat()` / `.strftime()`
+strings -- SQLAlchemy handles serialization to/from SQLite and PostgreSQL
+itself.
 """
 import uuid
 from datetime import datetime
@@ -54,7 +65,7 @@ class EventType:
 
 def _log(event_type: str, **fields) -> None:
     entry = {
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "timestamp": datetime.now(),
         "event_type": event_type,
         "request_id": fields.get("request_id"),
         "task_id": fields.get("task_id"),
@@ -96,7 +107,7 @@ def _record_transition(
             "trigger_type": trigger_type,
             "triggered_by": triggered_by,
             "reason": reason,
-            "occurred_at": datetime.now().isoformat(),
+            "occurred_at": datetime.now(),
         }
     )
 
@@ -184,7 +195,7 @@ def create_request(request_type: str, patient_id: str = DEFAULT_PATIENT_ID) -> d
 
     request_id = str(uuid.uuid4())[:8]
     task_id = str(uuid.uuid4())[:8]
-    now = datetime.now().isoformat()
+    now = datetime.now()
 
     repositories.insert_care_request(
         {
@@ -232,7 +243,7 @@ def create_request(request_type: str, patient_id: str = DEFAULT_PATIENT_ID) -> d
 def advance_state(request_id: str, next_state: str) -> dict:
     task = _require_task(request_id)
     current = task["state"]
-    now = datetime.now().isoformat()
+    now = datetime.now()
 
     if next_state == "KIT_RELEASED" and current != "WAITING_FOR_NURSE_CONFIRMATION":
         repositories.update_task_state(task["id"], "ERROR", now)
@@ -303,7 +314,7 @@ def verify_ids(request_id: str, patient_id: str, kit_id: str) -> dict:
     task = _require_task(request_id)
     req = _require_care_request(request_id)
     current = task["state"]
-    now = datetime.now().isoformat()
+    now = datetime.now()
 
     target = verify_transition(current)
     if target is None:
@@ -441,7 +452,7 @@ def verify_ids(request_id: str, patient_id: str, kit_id: str) -> dict:
 
 def emergency_stop(request_id: str) -> dict:
     task = _require_task(request_id)
-    now = datetime.now().isoformat()
+    now = datetime.now()
     prev = task["state"]
     repositories.update_task_state(task["id"], "ERROR", now)
     _log(
@@ -465,7 +476,7 @@ def emergency_stop(request_id: str) -> dict:
 
 def reset(request_id: str) -> dict:
     task = _require_task(request_id)
-    now = datetime.now().isoformat()
+    now = datetime.now()
     prev = task["state"]
     repositories.update_task_state(task["id"], "IDLE", now)
     repositories.update_care_request_status(request_id, "CANCELLED", completed_at=now)
@@ -490,7 +501,7 @@ def reset(request_id: str) -> dict:
 
 def cancel_request(request_id: str, actor: str = "patient") -> dict:
     task = _require_task(request_id)
-    now = datetime.now().isoformat()
+    now = datetime.now()
     prev = task["state"]
     if prev not in CANCELLABLE_STATES:
         raise DomainError(f"Cannot cancel from state: {prev}")
