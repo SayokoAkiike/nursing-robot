@@ -21,9 +21,15 @@ CANCELLED_STATUS = "CANCELLED"
 NG_RESULT = "NG"
 
 
-def _parse_iso(value: str | None) -> datetime | None:
-    if not value:
+def _parse_iso(value: "datetime | str | None") -> datetime | None:
+    """PR15: repositories now return real `datetime` objects (DateTime
+    columns), so this is usually just a passthrough. Kept tolerant of a
+    plain string too as a defensive fallback -- cheap insurance against any
+    caller that hasn't been migrated, at no real cost."""
+    if value is None:
         return None
+    if isinstance(value, datetime):
+        return value
     try:
         return datetime.fromisoformat(value)
     except ValueError:

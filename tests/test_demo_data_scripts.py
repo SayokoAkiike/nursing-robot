@@ -17,34 +17,32 @@ def test_shift_timestamps_for_request_shifts_every_related_row(robot_storage):
     workflow_service.advance_state(request_id, "KIT_SELECTED")
 
     before = repositories.get_care_request(request_id)
-    before_created_at = datetime.fromisoformat(before["created_at"])
+    before_created_at = before["created_at"]
 
     delta_seconds = -3600  # one hour into the past
     repositories.shift_timestamps_for_request(request_id, delta_seconds)
 
     after = repositories.get_care_request(request_id)
-    after_created_at = datetime.fromisoformat(after["created_at"])
+    after_created_at = after["created_at"]
     assert after_created_at == before_created_at - timedelta(seconds=3600)
 
     task = repositories.get_task_by_request_id(request_id)
     transitions = repositories.list_task_state_transitions(request_id=request_id)
     assert len(transitions) == 2
     for row in transitions:
-        occurred_at = datetime.fromisoformat(row["occurred_at"])
+        occurred_at = row["occurred_at"]
         # Both shifted by the same delta -- the gap between them (the
         # REQUEST_RECEIVED duration) must be unchanged.
         assert occurred_at < datetime.now()
-    gap = datetime.fromisoformat(transitions[1]["occurred_at"]) - datetime.fromisoformat(
-        transitions[0]["occurred_at"]
-    )
+    gap = transitions[1]["occurred_at"] - transitions[0]["occurred_at"]
     assert gap.total_seconds() >= 0
 
     logs = repositories.load_logs()
     assert len(logs) >= 1
     for entry in logs:
-        # robot_events uses "%Y-%m-%d %H:%M:%S" (space-separated, no "T").
-        parsed = datetime.strptime(entry["timestamp"], "%Y-%m-%d %H:%M:%S")
-        assert parsed < datetime.now()
+        # PR15: robot_events.timestamp is now a real DateTime column, same
+        # as every other timestamp -- no more separate string format here.
+        assert entry["timestamp"] < datetime.now()
 
     assert task is not None  # sanity: request/task still linked after the shift
 
@@ -86,7 +84,7 @@ def test_seed_spreads_created_at_within_requested_window(robot_storage):
     window_start = now - timedelta(days=days, seconds=5)  # small tolerance for test runtime
     for request_id, _scenario in created:
         row = repositories.get_care_request(request_id)
-        created_at = datetime.fromisoformat(row["created_at"])
+        created_at = row["created_at"]
         assert window_start <= created_at <= now + timedelta(seconds=5)
 
 

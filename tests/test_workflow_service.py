@@ -4,6 +4,8 @@ PR3 ("Task resource model") rewrite: every call now takes an explicit
 request_id instead of operating on an implicit single global slot. See
 that module's docstring for the concurrency rule and the `_view()` join.
 """
+from datetime import datetime
+
 import pytest
 
 from backend.core.errors import ConflictError, DomainError, ForbiddenError
@@ -119,7 +121,7 @@ def test_concurrency_guard_is_per_robot_not_global(robot_storage):
             "request_type": "water",
             "priority": "なし",
             "status": "ASSIGNED",
-            "created_at": "2026-07-08T00:00:00",
+            "created_at": datetime(2026, 7, 8, 0, 0, 0),
             "completed_at": None,
         }
     )
@@ -130,8 +132,8 @@ def test_concurrency_guard_is_per_robot_not_global(robot_storage):
             "robot_id": "ROBOT_2",
             "state": "REQUEST_RECEIVED",
             "kit_id": "KIT_WATER",
-            "assigned_at": "2026-07-08T00:00:00",
-            "updated_at": "2026-07-08T00:00:00",
+            "assigned_at": datetime(2026, 7, 8, 0, 0, 0),
+            "updated_at": datetime(2026, 7, 8, 0, 0, 0),
         }
     )
 

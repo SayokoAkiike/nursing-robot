@@ -74,7 +74,7 @@ def get_care_request(request_id: str) -> dict | None:
         session.close()
 
 
-def update_care_request_status(request_id: str, status: str, completed_at: str | None = None) -> None:
+def update_care_request_status(request_id: str, status: str, completed_at: "datetime | None" = None) -> None:
     init_db()
     session = get_session()
     try:
@@ -145,7 +145,7 @@ def get_active_task_for_robot(robot_id: str) -> dict | None:
         session.close()
 
 
-def update_task_state(task_id: str, state: str, updated_at: str) -> None:
+def update_task_state(task_id: str, state: str, updated_at: "datetime") -> None:
     init_db()
     session = get_session()
     try:
@@ -294,7 +294,7 @@ def append_log_entry(entry: dict) -> None:
             RobotEventRow(
                 request_id=entry.get("request_id"),
                 task_id=entry.get("task_id"),
-                timestamp=entry.get("timestamp", ""),
+                timestamp=entry.get("timestamp"),
                 event_type=entry.get("event_type", ""),
                 patient_id=entry.get("patient_id"),
                 request=entry.get("request"),
@@ -340,23 +340,18 @@ def load_logs() -> list:
 # the scripts themselves so they follow the same "scripts don't talk to the
 # ORM directly" rule as everything else in this codebase.
 
-def _shift_timestamp(value: str | None, delta_seconds: float) -> str | None:
-    """Shift a stored timestamp string by delta_seconds, preserving whichever
-    of the two formats this codebase actually uses:
-      - `datetime.isoformat()` (care_requests/robot_tasks/kit_verifications/
-        task_state_transitions) -- contains "T".
-      - `datetime.strftime("%Y-%m-%d %H:%M:%S")` (robot_events, written by
-        workflow_service._log()) -- space-separated, no "T".
-    Returns None unchanged (e.g. a not-yet-completed care_request's
-    completed_at).
+def _shift_timestamp(value: "datetime | None", delta_seconds: float) -> "datetime | None":
+    """Shift a stored timestamp by delta_seconds.
+
+    PR15: all timestamp columns are now DateTime, so this is a plain
+    datetime arithmetic helper -- the old dual-string-format handling
+    (isoformat() vs strftime("%Y-%m-%d %H:%M:%S")) is gone because both
+    formats no longer exist; every column round-trips through SQLAlchemy's
+    DateTime type as a real datetime object.
     """
-    if not value:
-        return value
-    if "T" in value:
-        shifted = datetime.fromisoformat(value) + timedelta(seconds=delta_seconds)
-        return shifted.isoformat()
-    shifted = datetime.strptime(value, "%Y-%m-%d %H:%M:%S") + timedelta(seconds=delta_seconds)
-    return shifted.strftime("%Y-%m-%d %H:%M:%S")
+    if value is None:
+        return None
+    return value + timedelta(seconds=delta_seconds)
 
 
 def shift_timestamps_for_request(request_id: str, delta_seconds: float) -> None:

@@ -18,19 +18,39 @@ addressable tables:
 
 Concurrency rule (see `backend/services/workflow_service.py`): at most one
 `robot_tasks` row per `robot_id` may be in a non-terminal state
-(TERMINAL_TASK_STATES = {IDLE, COMPLETED}) at a time. This is the same rule
-the old JSON singleton enforced implicitly (only one shared_state.json slot
-existed); it is now scoped to `robot_id` instead of being a hardcoded
-global, so introducing a second robot_id would allow two genuinely
-concurrent tasks with no further schema changes.
+(TERMINAL_TASK_STATES = {IDLE, COMPLETED}) at a time. Until PR15 this rule
+was enforced only in application code (`workflow_service.create_request`'s
+check-then-act against `repositories.get_active_task_for_robot`), which is
+a real TOCTOU race under concurrent requests. PR15 adds a partial unique
+index (`ux_robot_tasks_active_robot`) so the database itself refuses a
+second non-terminal row for the same robot_id -- the application check
+stays as a fast, friendly pre-check, but the index is what actually
+guarantees the invariant now. Must stay in sync with
+`repositories.NON_BLOCKING_TASK_STATES` (currently {"IDLE", "COMPLETED",
+"ERROR"}) -- the WHERE clause below is written in raw SQL since SQLAlchemy
+partial-index where-clauses need to be evaluable at table-definition time.
 
-Column types remain generic (String/Integer/Text) for SQLite/PostgreSQL
-portability -- see the note in the PR2 version of this file.
+PR15 also switches every timestamp column from String to DateTime. Two
+concrete problems this fixes: (1) `robot_events.timestamp` was written via
+`datetime.now().strftime("%Y-%m-%d %H:%M:%S")` while every other timestamp
+column used `datetime.now().isoformat()` -- two incompatible string
+formats coexisted in the same database. (2) `analytics_service.py` and
+`repositories.shift_timestamps_for_request` both had to manually
+`datetime.fromisoformat()` / `datetime.strptime()` values back out of the
+DB on every read. SQLAlchemy's DateTime type works the same way against
+both SQLite and PostgreSQL, so this doesn't cost the SQLite/PostgreSQL
+portability the previous String columns were chosen for.
+
+FK constraints are new in PR15 too (previously request_id/task_id were
+plain String columns with no DB-level referential integrity).
 """
-from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
+
+# Must match repositories.NON_BLOCKING_TASK_STATES.
+_ACTIVE_TASK_WHERE = text("state NOT IN ('IDLE', 'COMPLETED', 'ERROR')")
 
 
 class CareRequestRow(Base):
@@ -41,20 +61,30 @@ class CareRequestRow(Base):
     request_type = Column(String, nullable=True)
     priority = Column(String, nullable=True)
     status = Column(String, nullable=False, default="PENDING")
-    created_at = Column(String, nullable=True)
-    completed_at = Column(String, nullable=True)
+    created_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
 
 
 class RobotTaskRow(Base):
     __tablename__ = "robot_tasks"
+    __table_args__ = (
+        Index("ix_robot_tasks_request_id", "request_id"),
+        Index(
+            "ux_robot_tasks_active_robot",
+            "robot_id",
+            unique=True,
+            sqlite_where=_ACTIVE_TASK_WHERE,
+            postgresql_where=_ACTIVE_TASK_WHERE,
+        ),
+    )
 
     id = Column(String, primary_key=True)
-    request_id = Column(String, nullable=False)
+    request_id = Column(String, ForeignKey("care_requests.id"), nullable=False)
     robot_id = Column(String, nullable=False)
     state = Column(String, nullable=False, default="REQUEST_RECEIVED")
     kit_id = Column(String, nullable=True)
-    assigned_at = Column(String, nullable=True)
-    updated_at = Column(String, nullable=True)
+    assigned_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, nullable=True)
 
 
 class KitVerificationRow(Base):
@@ -73,7 +103,7 @@ class KitVerificationRow(Base):
     __tablename__ = "kit_verifications"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    task_id = Column(String, nullable=False, index=True)
+    task_id = Column(String, ForeignKey("robot_tasks.id"), nullable=False, index=True)
     patient_id = Column(String, nullable=True)
     kit_id = Column(String, nullable=True)
     expected_patient_id = Column(String, nullable=True)
@@ -82,16 +112,16 @@ class KitVerificationRow(Base):
     scanned_kit_id = Column(String, nullable=True)
     result = Column(String, nullable=False)
     message = Column(Text, nullable=True)
-    created_at = Column(String, nullable=True)
+    created_at = Column(DateTime, nullable=True)
 
 
 class RobotEventRow(Base):
     __tablename__ = "robot_events"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    request_id = Column(String, nullable=True)
-    task_id = Column(String, nullable=True)
-    timestamp = Column(String, nullable=False)
+    request_id = Column(String, ForeignKey("care_requests.id"), nullable=True)
+    task_id = Column(String, ForeignKey("robot_tasks.id"), nullable=True)
+    timestamp = Column(DateTime, nullable=False)
     event_type = Column(String, nullable=False)
     patient_id = Column(String, nullable=True)
     request = Column(String, nullable=True)
@@ -117,11 +147,11 @@ class TaskStateTransitionRow(Base):
     __tablename__ = "task_state_transitions"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    task_id = Column(String, nullable=False, index=True)
-    request_id = Column(String, nullable=False, index=True)
+    task_id = Column(String, ForeignKey("robot_tasks.id"), nullable=False, index=True)
+    request_id = Column(String, ForeignKey("care_requests.id"), nullable=False, index=True)
     from_state = Column(String, nullable=True)
     to_state = Column(String, nullable=False)
     trigger_type = Column(String, nullable=False)
     triggered_by = Column(String, nullable=True)
     reason = Column(Text, nullable=True)
-    occurred_at = Column(String, nullable=False)
+    occurred_at = Column(DateTime, nullable=False)
