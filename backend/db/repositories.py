@@ -542,6 +542,18 @@ def list_active_rounding_sessions(robot_id: str | None = None) -> list:
         session.close()
 
 
+def list_all_rounding_sessions() -> list:
+    """Every rounding_sessions row, unfiltered (PR27: analytics
+    aggregation). Mirrors list_all_care_requests()'s role for PR10."""
+    init_db()
+    session = get_session()
+    try:
+        rows = session.query(RoundingSessionRow).all()
+        return [_as_dict(r, ROUNDING_SESSION_FIELDS) for r in rows]
+    finally:
+        session.close()
+
+
 def insert_patient_interaction(row: dict) -> None:
     init_db()
     session = get_session()
@@ -562,6 +574,21 @@ def list_patient_interactions(rounding_session_id: str) -> list:
             .order_by(PatientInteractionRow.id)
             .all()
         )
+        return [_as_dict(r, PATIENT_INTERACTION_FIELDS) for r in rows]
+    finally:
+        session.close()
+
+
+def list_all_patient_interactions() -> list:
+    """Every patient_interactions row, unfiltered (PR27: analytics
+    aggregation) -- each row corresponds to exactly one classify-need
+    call, so counting these rows directly answers "how many needs have
+    been classified" without having to infer it from a rounding
+    session's (possibly since-overwritten) current status."""
+    init_db()
+    session = get_session()
+    try:
+        rows = session.query(PatientInteractionRow).order_by(PatientInteractionRow.id).all()
         return [_as_dict(r, PATIENT_INTERACTION_FIELDS) for r in rows]
     finally:
         session.close()

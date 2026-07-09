@@ -1,0 +1,99 @@
+{
+  "uid": "precare-escalation-queue",
+  "title": "PreCareBot: エスカレーションキュー",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-30d", "to": "now" },
+  "timezone": "browser",
+  "tags": ["precarebot", "rounding"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "未確認 (PENDING) 件数",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "precare-postgres" },
+      "fieldConfig": {
+        "defaults": { "thresholds": { "steps": [
+          { "color": "green", "value": null },
+          { "color": "orange", "value": 1 },
+          { "color": "red", "value": 5 }
+        ] } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS pending FROM nurse_escalations WHERE status = 'PENDING'",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "平均ack時間 (全期間)",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "precare-postgres" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT AVG(EXTRACT(EPOCH FROM (acknowledged_at - created_at))) AS avg_ack_seconds\nFROM nurse_escalations\nWHERE acknowledged_at IS NOT NULL",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "piechart",
+      "title": "priority別件数",
+      "gridPos": { "h": 10, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "precare-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT priority, COUNT(*) AS count FROM nurse_escalations GROUP BY priority ORDER BY count DESC",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "piechart",
+      "title": "need別件数",
+      "gridPos": { "h": 10, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "precare-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT\n  COALESCE(rs.detected_need, 'unknown') AS detected_need,\n  COUNT(*) AS count\nFROM nurse_escalations e\nLEFT JOIN rounding_sessions rs ON rs.id = e.rounding_session_id\nGROUP BY 1\nORDER BY count DESC",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "status別件数",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "postgres", "uid": "precare-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT status, COUNT(*) AS count FROM nurse_escalations GROUP BY status ORDER BY count DESC",
+          "rawQuery": true
+        }
+      ]
+    }
+  ]
+}

@@ -26,3 +26,13 @@ def get_verification_failures():
 @router.get("/state-durations")
 def get_state_durations():
     return analytics_service.state_durations()
+
+
+@router.get("/rounding-summary")
+def get_rounding_summary():
+    return analytics_service.rounding_summary()
+
+
+@router.get("/escalation-breakdown")
+def get_escalation_breakdown():
+    return analytics_service.escalation_breakdown()
