@@ -115,6 +115,99 @@ def verify_transition(current: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# PR23: rounding / check-in workflow state machine.
+#
+# Deliberately a *separate* dict from ALLOWED_TRANSITIONS above rather than
+# merged into it. ALLOWED_TRANSITIONS relies on VERIFYING_PATIENT and
+# KIT_RELEASED being *absent* as keys to force callers through
+# verify_transition() / the nurse-confirmation gate -- merging rounding
+# states in would mean two independent people extending the same dict for
+# two different workflows, which is exactly the "two rulesets that can
+# silently drift apart" failure mode this module's docstring describes
+# fixing for the delivery flow. Keeping them separate means a mistake in
+# one workflow's transitions can't corrupt the other's.
+#
+# `rounding_sessions.status` (backend/db/models.py, PR22) holds this value
+# space; `robot_tasks.state` continues to hold RobotState/ALLOWED_TRANSITIONS
+# values. The two meet only at one deliberate seam: NEED_CLASSIFIED's
+# DELIVERY_REQUIRED branch (see rounding_branch_transition() below) is what
+# `rounding_service.require_delivery()` uses to call into
+# `workflow_service.create_request()`, at which point the *new* care_request
+# / robot_task follows ALLOWED_TRANSITIONS like any other delivery.
+# ---------------------------------------------------------------------------
+
+
+class RoundingState(str, Enum):
+    IDLE = "IDLE"
+    ROUNDING = "ROUNDING"
+    PATIENT_DETECTED = "PATIENT_DETECTED"
+    APPROACHING_BEDSIDE = "APPROACHING_BEDSIDE"
+    INTERACTION_STARTED = "INTERACTION_STARTED"
+    NEED_CLASSIFIED = "NEED_CLASSIFIED"
+    INFORMATION_PROVIDED = "INFORMATION_PROVIDED"
+    ESCALATING_TO_NURSE = "ESCALATING_TO_NURSE"
+    WAITING_FOR_NURSE_ACK = "WAITING_FOR_NURSE_ACK"
+    NURSE_ACKNOWLEDGED = "NURSE_ACKNOWLEDGED"
+    DELIVERY_REQUIRED = "DELIVERY_REQUIRED"
+    COMPLETED = "COMPLETED"
+    ERROR = "ERROR"
+
+
+# current -> next, for the linear spine of the rounding flow only.
+# Deliberately excludes:
+#   - "IDLE" (genesis only happens via rounding_service.start_rounding)
+#   - "NEED_CLASSIFIED" (branches three ways depending on
+#     need_classification_service's route -- see
+#     rounding_branch_transition() below, the rounding equivalent of
+#     verify_transition())
+#   - "ESCALATING_TO_NURSE" is a normal single-target step (always goes to
+#     WAITING_FOR_NURSE_ACK once raised), so it *is* included below, unlike
+#     NEED_CLASSIFIED which has a real choice to make.
+ROUNDING_ALLOWED_TRANSITIONS = {
+    "ROUNDING": "PATIENT_DETECTED",
+    "PATIENT_DETECTED": "APPROACHING_BEDSIDE",
+    "APPROACHING_BEDSIDE": "INTERACTION_STARTED",
+    "INTERACTION_STARTED": "NEED_CLASSIFIED",
+    "INFORMATION_PROVIDED": "COMPLETED",
+    "ESCALATING_TO_NURSE": "WAITING_FOR_NURSE_ACK",
+    "WAITING_FOR_NURSE_ACK": "NURSE_ACKNOWLEDGED",
+    "NURSE_ACKNOWLEDGED": "COMPLETED",
+}
+
+# The three legal ways out of NEED_CLASSIFIED, keyed by
+# need_classification_service's `route` value rather than being a fixed
+# next state -- the rounding-side counterpart to verify_transition().
+# Initial implementation (PR23): URGENT_ESCALATION routes to the same
+# ESCALATING_TO_NURSE target as NURSE_NOTIFICATION (see proposal doc,
+# "初期実装では、URGENT_ESCALATIONはESCALATING_TO_NURSEに接続して構いません");
+# a future PR can give it its own priority lane if needed without changing
+# this shape.
+ROUNDING_BRANCH_TARGETS = {
+    "INFORMATION_ONLY": "INFORMATION_PROVIDED",
+    "NURSE_NOTIFICATION": "ESCALATING_TO_NURSE",
+    "URGENT_ESCALATION": "ESCALATING_TO_NURSE",
+    "DELIVERY_REQUIRED": "DELIVERY_REQUIRED",
+}
+
+
+def rounding_allowed_next_state(current: str) -> str | None:
+    return ROUNDING_ALLOWED_TRANSITIONS.get(current)
+
+
+def is_valid_rounding_transition(current: str, next_state: str) -> bool:
+    return rounding_allowed_next_state(current) == next_state
+
+
+def rounding_branch_transition(current: str, route: str) -> str | None:
+    """The route-dependent transition out of NEED_CLASSIFIED. Returns None
+    (an invalid branch) for any current state other than NEED_CLASSIFIED,
+    or any route not in ROUNDING_BRANCH_TARGETS."""
+    if current != RoundingState.NEED_CLASSIFIED.value:
+        return None
+    return ROUNDING_BRANCH_TARGETS.get(route)
+
+
+# ---------------------------------------------------------------------------
 # CLI demo only (`python -m backend.services.robot_service`). Not used by the
 # API; kept for local exploration of the workflow without a server running.
 # ---------------------------------------------------------------------------
