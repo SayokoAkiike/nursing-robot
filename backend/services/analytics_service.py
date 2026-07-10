@@ -159,3 +159,130 @@ def state_durations() -> list:
     ]
     result.sort(key=lambda row: str(row["state"]))
     return result
+
+
+# ---------------------------------------------------------------------------
+# PR27: rounding / escalation analytics.
+#
+# `patients_detected` / `interactions_started` are counted from each
+# rounding_sessions row's *current* `status` rather than from a separate
+# event log (PR22's schema doesn't add a rounding equivalent of PR8's
+# task_state_transitions -- see rounding_service.py's module docstring for
+# why). This is safe specifically because reaching PATIENT_DETECTED or
+# INTERACTION_STARTED is a strictly sequential prerequisite no matter which
+# way a session eventually branches (INFORMATION_ONLY / escalated /
+# DELIVERY_REQUIRED all pass through both first) -- so "current status is
+# at-or-past milestone X" is equivalent to "this session reached X at some
+# point", with no ambiguity. The same is NOT true for "did this session
+# escalate", since an escalated session and a plain INFORMATION_ONLY
+# session can both end up at the same final COMPLETED status -- so
+# escalations_created / urgent_escalations are counted directly from
+# nurse_escalations rows instead, never inferred from rounding_sessions.status.
+# ---------------------------------------------------------------------------
+
+_REACHED_PATIENT_DETECTED = {
+    "PATIENT_DETECTED",
+    "APPROACHING_BEDSIDE",
+    "INTERACTION_STARTED",
+    "NEED_CLASSIFIED",
+    "INFORMATION_PROVIDED",
+    "ESCALATING_TO_NURSE",
+    "WAITING_FOR_NURSE_ACK",
+    "NURSE_ACKNOWLEDGED",
+    "DELIVERY_REQUIRED",
+    "COMPLETED",
+}
+_REACHED_INTERACTION_STARTED = _REACHED_PATIENT_DETECTED - {
+    "PATIENT_DETECTED",
+    "APPROACHING_BEDSIDE",
+}
+URGENT_PRIORITY = "URGENT"
+
+
+def rounding_summary() -> dict:
+    """GET /analytics/rounding-summary: headline counts for the rounding /
+    check-in workflow, mirroring summary()'s role for the delivery flow."""
+    sessions = repositories.list_all_rounding_sessions()
+    interactions = repositories.list_all_patient_interactions()
+    escalations = repositories.list_nurse_escalations()
+
+    total_rounding_sessions = len(sessions)
+    patients_detected = sum(
+        1 for s in sessions if s["status"] in _REACHED_PATIENT_DETECTED
+    )
+    interactions_started = sum(
+        1 for s in sessions if s["status"] in _REACHED_INTERACTION_STARTED
+    )
+    needs_classified = len(interactions)
+    escalations_created = len(escalations)
+    urgent_escalations = sum(1 for e in escalations if e["priority"] == URGENT_PRIORITY)
+
+    ack_durations = []
+    for e in escalations:
+        created = _parse_iso(e["created_at"])
+        acked = _parse_iso(e["acknowledged_at"])
+        if created is None or acked is None:
+            continue
+        ack_durations.append((acked - created).total_seconds())
+    average_time_to_ack = (
+        round(sum(ack_durations) / len(ack_durations), 1) if ack_durations else None
+    )
+
+    return {
+        "total_rounding_sessions": total_rounding_sessions,
+        "patients_detected": patients_detected,
+        "interactions_started": interactions_started,
+        "needs_classified": needs_classified,
+        "escalations_created": escalations_created,
+        "urgent_escalations": urgent_escalations,
+        "average_time_to_ack": average_time_to_ack,
+    }
+
+
+def escalation_breakdown() -> dict:
+    """GET /analytics/escalation-breakdown: nurse_escalations grouped by
+    priority, detected_need, and status.
+
+    `detected_need` isn't a nurse_escalations column -- it's read off each
+    escalation's parent rounding_sessions row (joined via
+    rounding_session_id) rather than the escalation's own free-text
+    `reason` field, since `reason` is caller-supplied and optional (see
+    rounding_service.escalate()'s docstring) while
+    rounding_sessions.detected_need is always set by classify_need()
+    before an escalation can even be raised.
+    """
+    escalations = repositories.list_nurse_escalations()
+
+    by_priority: dict[str, int] = {}
+    by_status: dict[str, int] = {}
+    by_need: dict[str, int] = {}
+
+    session_cache: dict[str, dict | None] = {}
+
+    def _session_for(session_id: str) -> dict | None:
+        if session_id not in session_cache:
+            session_cache[session_id] = repositories.get_rounding_session(session_id)
+        return session_cache[session_id]
+
+    for e in escalations:
+        priority = e["priority"] or "UNKNOWN"
+        by_priority[priority] = by_priority.get(priority, 0) + 1
+
+        status = e["status"] or "UNKNOWN"
+        by_status[status] = by_status.get(status, 0) + 1
+
+        rounding_session = _session_for(e["rounding_session_id"])
+        need = (rounding_session or {}).get("detected_need") or "unknown"
+        by_need[need] = by_need.get(need, 0) + 1
+
+    def _to_rows(counts: dict[str, int], key_name: str) -> list:
+        return [
+            {key_name: key, "count": count}
+            for key, count in sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
+        ]
+
+    return {
+        "by_priority": _to_rows(by_priority, "priority"),
+        "by_detected_need": _to_rows(by_need, "detected_need"),
+        "by_status": _to_rows(by_status, "status"),
+    }

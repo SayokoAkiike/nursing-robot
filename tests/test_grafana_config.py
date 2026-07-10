@@ -94,3 +94,25 @@ def test_dashboards_cover_completions_verification_and_state_durations():
     assert "care_requests" in all_sql
     assert "kit_verifications" in all_sql
     assert "task_state_transitions" in all_sql
+
+
+def test_dashboards_cover_rounding_sessions_and_nurse_escalations():
+    """PR27 regression guard, same shape as the check above: the rounding
+    workflow's own tables must actually be queried by a dashboard."""
+    all_sql = ""
+    for path in _dashboard_json_files():
+        with open(path) as f:
+            dashboard = json.load(f)
+        for panel in dashboard["panels"]:
+            for target in panel["targets"]:
+                all_sql += target["rawSql"] + "\n"
+
+    assert "rounding_sessions" in all_sql
+    assert "patient_interactions" in all_sql
+    assert "nurse_escalations" in all_sql
+
+
+def test_at_least_five_dashboard_json_files_exist():
+    """PR27 adds two more dashboards (rounding-overview, escalation-queue)
+    on top of PR16's three."""
+    assert len(_dashboard_json_files()) >= 5

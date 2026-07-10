@@ -1,0 +1,132 @@
+{
+  "uid": "precare-rounding-overview",
+  "title": "PreCareBot: 巡回セッション概況",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-30d", "to": "now" },
+  "timezone": "browser",
+  "tags": ["precarebot", "rounding"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "巡回セッション数",
+      "gridPos": { "h": 6, "w": 4, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "precare-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS total FROM rounding_sessions",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "患者発見数",
+      "gridPos": { "h": 6, "w": 4, "x": 4, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "precare-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS total FROM rounding_sessions WHERE patient_id IS NOT NULL",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "要望分類数",
+      "gridPos": { "h": 6, "w": 4, "x": 8, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "precare-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS total FROM patient_interactions",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "看護師エスカレーション数",
+      "gridPos": { "h": 6, "w": 4, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "precare-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS total FROM nurse_escalations",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "URGENT件数",
+      "gridPos": { "h": 6, "w": 4, "x": 16, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "precare-postgres" },
+      "fieldConfig": {
+        "defaults": { "thresholds": { "steps": [
+          { "color": "green", "value": null },
+          { "color": "red", "value": 1 }
+        ] } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS total FROM nurse_escalations WHERE priority = 'URGENT'",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "平均ack時間",
+      "gridPos": { "h": 6, "w": 4, "x": 20, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "precare-postgres" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT AVG(EXTRACT(EPOCH FROM (acknowledged_at - created_at))) AS avg_ack_seconds\nFROM nurse_escalations\nWHERE acknowledged_at IS NOT NULL",
+          "rawQuery": true
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "日次 巡回セッション数",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 6 },
+      "datasource": { "type": "postgres", "uid": "precare-postgres" },
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "bars" } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT\n  $__timeGroupAlias(started_at,'1d'),\n  COUNT(*) AS sessions\nFROM rounding_sessions\nWHERE $__timeFilter(started_at)\nGROUP BY 1\nORDER BY 1",
+          "rawQuery": true
+        }
+      ]
+    }
+  ]
+}
