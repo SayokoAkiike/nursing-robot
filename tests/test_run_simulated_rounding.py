@@ -50,6 +50,19 @@ def test_urgent_pain_scenario_classifies_correctly(robot_storage):
     assert final_state["escalation_level"] == "URGENT"
 
 
+def test_fall_risk_scenario_classifies_correctly(robot_storage):
+    final_state = run_rounding(
+        _client(),
+        scenario="rounding_fall_risk",
+        nurse_token=NURSE_TOKEN,
+        step_delay=0,
+        auto_ack=True,
+    )
+    assert final_state["status"] == "COMPLETED"
+    assert final_state["escalation_level"] == "URGENT"
+    assert final_state["detected_need"] == "fall_risk"
+
+
 def test_water_request_scenario_uses_room_204(robot_storage):
     final_state = run_rounding(
         _client(),
