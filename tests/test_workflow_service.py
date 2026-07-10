@@ -17,6 +17,41 @@ def test_create_request_ok(robot_storage):
     result = workflow_service.create_request("toileting")
     assert result["robot_state"] == "REQUEST_RECEIVED"
     assert result["kit"] == "KIT_TOILETING_A"
+    # Item 5: _view() now exposes robot_id, defaulting to DEFAULT_ROBOT_ID
+    # for a caller that didn't ask for a specific robot.
+    assert result["robot_id"] == workflow_service.DEFAULT_ROBOT_ID
+
+
+def test_create_request_assigns_to_given_robot_id(robot_storage):
+    """Item 5: create_request(robot_id=...) actually assigns the task to
+    that robot, not always DEFAULT_ROBOT_ID -- the service-layer half of
+    the multi-robot support the DB/data model already had via the partial
+    unique index (see test_concurrency_guard_is_per_robot_not_global)."""
+    result = workflow_service.create_request("toileting", robot_id="ROBOT_2")
+    assert result["robot_id"] == "ROBOT_2"
+    assert repositories.get_active_task_for_robot("ROBOT_2") is not None
+    assert repositories.get_active_task_for_robot(workflow_service.DEFAULT_ROBOT_ID) is None
+
+
+def test_create_request_concurrency_guard_is_scoped_per_robot_id(robot_storage):
+    """Two different robot_ids can each hold an active task at the same
+    time via create_request() itself (not just via a direct repositories.*
+    call, as test_concurrency_guard_is_per_robot_not_global demonstrates)."""
+    workflow_service.create_request("toileting", robot_id="ROBOT_1")
+    result = workflow_service.create_request("water", robot_id="ROBOT_2")
+    assert result["robot_state"] == "REQUEST_RECEIVED"
+
+    with pytest.raises(ConflictError, match="in progress"):
+        workflow_service.create_request("toileting", robot_id="ROBOT_1")
+
+
+def test_get_current_state_is_scoped_to_given_robot_id(robot_storage):
+    assert workflow_service.get_current_state("ROBOT_2")["robot_state"] == "IDLE"
+
+    workflow_service.create_request("toileting", robot_id="ROBOT_2")
+
+    assert workflow_service.get_current_state("ROBOT_2")["robot_state"] == "REQUEST_RECEIVED"
+    assert workflow_service.get_current_state(workflow_service.DEFAULT_ROBOT_ID)["robot_state"] == "IDLE"
 
 
 def test_create_request_while_in_progress(robot_storage):

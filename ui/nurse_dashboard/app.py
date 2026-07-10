@@ -97,6 +97,11 @@ else:
         req = task.get("request", "-")
         risk = task.get("risk", "-")
         kit = task.get("kit", "-")
+        # Item 5 (multi-robot support): workflow_service._view() now
+        # includes robot_id, so a nurse watching several robots at once
+        # can tell which robot each task belongs to instead of assuming
+        # it's always the one robot the dashboard used to imply.
+        robot_id = task.get("robot_id", "-")
         ts = task.get("timestamp", "")
         time_str = datetime.fromisoformat(ts).strftime("%H:%M:%S") if ts else "-"
         risk_label = RISK_COLOR.get(risk, "-")
@@ -111,7 +116,7 @@ else:
             steps_html += f"<div style='display:inline-flex;flex-direction:column;align-items:center;gap:3px;min-width:72px'><div style='width:10px;height:10px;border-radius:50%;{dot}'></div><span style='font-size:9px;{lbl}'>{sl}</span></div>"
 
         with st.container(border=True):
-            st.markdown(f"**{pid}** · {req} · {risk_label} · `{STATE_MESSAGES.get(rs, rs)}` · {time_str}")
+            st.markdown(f"**{pid}** · {req} · {risk_label} · `{STATE_MESSAGES.get(rs, rs)}` · {robot_id} · {time_str}")
             st.markdown(f"<div style='background:#f7f7f7;border-radius:6px;padding:8px 12px;overflow-x:auto;white-space:nowrap;'><div style='display:flex;gap:4px;'>{steps_html}</div></div>", unsafe_allow_html=True)
 
             c1, c2, c3, c4 = st.columns(4)

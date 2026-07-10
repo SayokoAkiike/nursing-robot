@@ -340,6 +340,16 @@ def require_delivery(
     (robot_service.py) like any patient-tablet-originated request --
     including the untouched VERIFYING_PATIENT/KIT_RELEASED safety gates.
 
+    Item 5 (multi-robot support): the delivery task is now assigned to
+    *this session's own* `robot_id` (the robot actually doing the
+    rounding), not silently defaulted to `workflow_service.
+    DEFAULT_ROBOT_ID` as before -- a rounding robot other than the
+    default one asking for a delivery no longer hands the task to a robot
+    that was never at the bedside. `session["robot_id"]` is always set
+    (start_rounding() requires it), so the `or` fallback below only
+    matters for pre-item-5 rows in an existing database that predate the
+    column being populated.
+
     The rounding session itself is left at DELIVERY_REQUIRED, not marked
     COMPLETED here -- it and the delivery task are two independently
     tracked things now (session id and request_id are what link them for
@@ -362,6 +372,7 @@ def require_delivery(
         patient_id=effective_patient_id,
         source="robot_rounding",
         rounding_session_id=session_id,
+        robot_id=session.get("robot_id") or workflow_service.DEFAULT_ROBOT_ID,
     )
     _log(
         RoundingEventType.DELIVERY_REQUESTED,

@@ -121,6 +121,25 @@ def test_require_delivery_creates_real_care_request_and_task(robot_storage):
     assert result["session"]["status"] == "DELIVERY_REQUIRED"
 
 
+def test_require_delivery_assigns_to_sessions_own_robot_id(robot_storage):
+    """Item 5: a rounding session started on a non-default robot must hand
+    its delivery request to that same robot, not silently to
+    workflow_service.DEFAULT_ROBOT_ID -- the exact gap
+    test_workflow_service.py's test_concurrency_guard_is_per_robot_not_
+    global first documented (data model supports it, but require_delivery
+    used to ignore it)."""
+    session = rounding_service.start_rounding("204", robot_id="ROBOT_2")
+    rounding_service.detect_patient(session["id"], "PATIENT_B_ROOM_204")
+    rounding_service.start_interaction(session["id"])
+    rounding_service.classify_need(session["id"], "トイレに行きたいです")
+
+    result = rounding_service.require_delivery(session["id"], "toileting")
+
+    task = repositories.get_task_by_request_id(result["request_id"])
+    assert task is not None
+    assert task["robot_id"] == "ROBOT_2"
+
+
 def test_require_delivery_without_patient_id_raises(robot_storage):
     # start_rounding -> detect_patient not called -> no patient_id anywhere.
     session = rounding_service.start_rounding("203")

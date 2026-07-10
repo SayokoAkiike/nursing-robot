@@ -65,6 +65,34 @@ def test_list_patients_view_returns_every_seeded_patient(robot_storage):
     assert {v["id"] for v in views} == set(PATIENTS)
 
 
+def test_list_robots_view_reports_idle_before_any_task(robot_storage):
+    domain_service.seed_default_domain_data()
+    robots = domain_service.list_robots_view()
+    assert len(robots) == 1
+    assert robots[0]["id"] == domain_service.DEFAULT_ROBOT_ID
+    assert robots[0]["status"] == "IDLE"
+
+
+def test_list_robots_view_reports_busy_once_a_task_is_active(robot_storage):
+    from backend.services import workflow_service
+
+    domain_service.seed_default_domain_data()
+    workflow_service.create_request("toileting", robot_id=domain_service.DEFAULT_ROBOT_ID)
+
+    robots = domain_service.list_robots_view()
+    assert robots[0]["status"] == "BUSY"
+
+
+def test_pick_available_robot_id_returns_none_when_all_busy(robot_storage):
+    from backend.services import workflow_service
+
+    domain_service.seed_default_domain_data()
+    assert domain_service.pick_available_robot_id() == domain_service.DEFAULT_ROBOT_ID
+
+    workflow_service.create_request("toileting", robot_id=domain_service.DEFAULT_ROBOT_ID)
+    assert domain_service.pick_available_robot_id() is None
+
+
 def test_list_wards_view_nests_rooms_beds_and_patient_occupancy(robot_storage):
     domain_service.seed_default_domain_data()
 

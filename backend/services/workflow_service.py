@@ -14,9 +14,9 @@ display label/kit/risk from `REQUEST_TYPES` rather than storing them
 redundantly.
 
 Concurrency rule: `create_request` raises ConflictError if
-`repositories.get_active_task_for_robot(DEFAULT_ROBOT_ID)` returns a task
--- i.e. at most one non-terminal task per robot. This is the exact rule the
-old JSON singleton enforced (see `backend/db/repositories.py`'s
+`repositories.get_active_task_for_robot(robot_id)` returns a task -- i.e.
+at most one non-terminal task per robot. This is the exact rule the old
+JSON singleton enforced (see `backend/db/repositories.py`'s
 NON_BLOCKING_TASK_STATES docstring), just expressed per `robot_id` instead
 of as an unconditional global. Since PR15 this is also enforced by a
 partial unique DB index (`robot_tasks.ux_robot_tasks_active_robot`), so a
@@ -27,6 +27,19 @@ IntegrityError bubbling up from a DB-level race loser.
 `tests/test_workflow_service.py::test_concurrency_guard_is_per_robot_not_
 global` is the regression test proving this is no longer a hardcoded
 singleton.
+
+Roadmap item 5 ("multi-robot support"): `create_request()` / `get_current_
+state()` now take an optional `robot_id` (default `DEFAULT_ROBOT_ID`, so
+every existing caller is unaffected). The partial unique index already
+scoped this per-robot from PR15 onward -- this change makes the *service
+layer* actually pass a caller-chosen `robot_id` through instead of always
+hardcoding the one constant. `rounding_service.require_delivery()` is the
+first caller to pass a non-default `robot_id` (the rounding session's own
+robot), so a delivery requested mid-rounding is assigned to the robot
+that's physically at the bedside, not always ROBOT_1.
+`tests/test_workflow_service.py::test_create_request_assigns_to_given_
+robot_id` and `::test_get_current_state_is_scoped_to_given_robot_id` cover
+this.
 
 Unlike the JSON/singleton versions, cancelling or resetting a request does
 not erase it: `get_request(request_id)` keeps working for old request_ids
@@ -162,7 +175,13 @@ def _raise_error_escalation(
 
 
 def _view(request_id: str) -> dict | None:
-    """Join care_requests + robot_tasks into the legacy dict shape."""
+    """Join care_requests + robot_tasks into the legacy dict shape.
+
+    `robot_id` (item 5) is a purely additive field appended after the
+    original keys -- existing callers that only read the fields they
+    already knew about are unaffected; new callers (the nurse dashboard's
+    per-robot column, an `/requests?robot_id=` filter) can now tell tasks
+    on different robots apart."""
     req = repositories.get_care_request(request_id)
     task = repositories.get_task_by_request_id(request_id)
     if req is None or task is None:
@@ -177,6 +196,7 @@ def _view(request_id: str) -> dict | None:
         "patient_id": req["patient_id"],
         "robot_state": task["state"],
         "timestamp": req["created_at"],
+        "robot_id": task["robot_id"],
     }
 
 
@@ -184,9 +204,11 @@ def _idle_view() -> dict:
     return {"request": None, "robot_state": "IDLE"}
 
 
-def get_current_state() -> dict:
-    """GET /state: the active task on the default robot, if any."""
-    active = repositories.get_active_task_for_robot(DEFAULT_ROBOT_ID)
+def get_current_state(robot_id: str = DEFAULT_ROBOT_ID) -> dict:
+    """GET /state: the active task on `robot_id` (defaults to
+    DEFAULT_ROBOT_ID for backward compatibility -- every caller before
+    item 5 gets the exact same behavior as before)."""
+    active = repositories.get_active_task_for_robot(robot_id)
     if active is None:
         return _idle_view()
     return _view(active["request_id"]) or _idle_view()
@@ -240,6 +262,7 @@ def create_request(
     patient_id: str = DEFAULT_PATIENT_ID,
     source: str = "patient_tablet",
     rounding_session_id: str | None = None,
+    robot_id: str = DEFAULT_ROBOT_ID,
 ) -> dict:
     """`source` / `rounding_session_id` are PR23 additions (columns added
     to `care_requests` in PR22 but left unexposed until a real caller
@@ -247,8 +270,13 @@ def create_request(
     `rounding_service.require_delivery()` is the first caller to pass
     `source="robot_rounding"`; every existing caller (the patient UI via
     `routes_requests.py`, `backend/scripts/*`) keeps the default of
-    "patient_tablet" and needs no changes."""
-    if repositories.get_active_task_for_robot(DEFAULT_ROBOT_ID) is not None:
+    "patient_tablet" and needs no changes.
+
+    `robot_id` (item 5) defaults to DEFAULT_ROBOT_ID for the same reason --
+    every pre-existing caller keeps assigning to the one robot it always
+    has. `rounding_service.require_delivery()` is the first caller to pass
+    a non-default `robot_id` (the rounding session's own robot)."""
+    if repositories.get_active_task_for_robot(robot_id) is not None:
         raise ConflictError("Another request is in progress")
     info = REQUEST_TYPES.get(request_type)
     if not info:
@@ -275,7 +303,7 @@ def create_request(
         {
             "id": task_id,
             "request_id": request_id,
-            "robot_id": DEFAULT_ROBOT_ID,
+            "robot_id": robot_id,
             "state": "REQUEST_RECEIVED",
             "kit_id": info["kit"],
             "assigned_at": now,

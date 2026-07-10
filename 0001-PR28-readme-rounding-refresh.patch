@@ -1,0 +1,342 @@
+From 7312a43f503d39a509d3d22d90174177cac0d1eb Mon Sep 17 00:00:00 2001
+From: PreCareBot Dev <dev@example.com>
+Date: Fri, 10 Jul 2026 02:07:13 +0000
+Subject: [PATCH] PR28: README refresh for the rounding/check-in workflow
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Updates README.md to document Phase 4.5 (PR22-27) alongside the
+existing delivery workflow, per the original proposal doc's section 10.
+
+- Intro: added the proposal doc's exact framing paragraph (patient
+  check-in via rounding, not just button-press requests; existing
+  patient UI kept as a bedside safety display / manual input channel).
+- New 'rounding workflow architecture' mermaid diagram, kept separate
+  from the existing delivery architecture diagram rather than merged
+  into one, mirroring how ROUNDING_ALLOWED_TRANSITIONS is kept as its
+  own dict in robot_service.py -- the doc for the two ought to look as
+  separate as the code does.
+- Feature table: added the 7 rounding-related rows (domain model,
+  services, API, simulation script, UI, analytics/Grafana), bumped the
+  pytest count from 159 to 249 (actual current collected count).
+- Data model: extended the ER diagram with rounding_sessions /
+  patient_interactions / nurse_escalations and care_requests' new
+  source / rounding_session_id columns; added prose bullets for the
+  three new tables.
+- Analytics / Grafana sections: added the two new endpoints (with
+  example responses) and two new dashboards.
+- New 'run_simulated_rounding.py' walkthrough section, same structure
+  and same safety-gate framing as the existing run_simulated_delivery.py
+  section.
+- API endpoint table: added all /rounding/* and /escalations/* routes.
+- Roadmap: added a Phase 4.5 row; Current Limitations and the
+  未実装 table both got a line noting real speech/person detection
+  remains out of scope by design.
+
+No code changes in this PR -- README.md only. Verified: 233 non-pybullet
+tests still pass (README isn't parsed by any test); both mermaid blocks
+have balanced brackets/parens (the ER diagram's brace 'imbalance' is
+expected crow's-foot notation, present in the pre-PR28 diagram too).
+---
+ README.md | 166 +++++++++++++++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 157 insertions(+), 9 deletions(-)
+
+diff --git a/README.md b/README.md
+index c5dd4a0..44035d4 100644
+--- a/README.md
++++ b/README.md
+@@ -7,13 +7,15 @@
+ PreCareBot は、看護現場の転倒予防を目的とした「安全制約つきベッドサイドアシストロボット」の**ソフトウェアMVP**です。
+ 物理ロボットは実装しておらず、患者リクエスト受信・キット配送・QR照合・看護師確認というワークフローを、ステートマシンとREST APIで設計・実装しています。Phase 4からは、この一連のフローをヘッドレスなPyBullet物理シミュレーション上でも一気通貫で駆動できるようになりました。
+ 
++Phase 4.5（PR22〜PR28）からは、これに加えてもう一つの方向性を持つソフトウェアになっています。PreCareBotは、患者が自分でボタンを押すことだけを前提にしたリクエスト端末ではなく、病棟内を巡回しながら患者に声掛けを行い、困りごとや転倒リスクにつながる訴えを拾い、必要に応じて看護師へ要点付きで通知する見守り・巡回支援ワークフローのソフトウェアMVPです。ベッドサイドのタブレットUIは、患者からの能動的な入力や、ロボット到着後の「立ち上がらずお待ちください」などの安全表示として併用できます。既存の配送ワークフローは変更・削除しておらず、巡回セッションの中で「配送が必要」と分類された場合のみ、既存のQR照合・看護師確認ゲート付き配送フローへそのまま接続します。
++
+ ---
+ 
+ ## 🎯 解決する問題
+ 
+-病院でナースコールから看護師到着まで数分かかる間に、患者が一人で立ち上がろうとして転倒するリスクがある。
++病院でナースコールから看護師到着まで数分かかる間に、患者が一人で立ち上がろうとして転倒するリスクがある。特に高齢患者、認知機能が低下している患者、遠慮して訴えない患者は、そもそも自分からナースコールやタブレットを押してくれるとは限らない。
+ 
+-**設計アプローチ**: 看護師が訪室するより先にロボットがキットを届け、患者画面に「立ち上がらずお待ちください」と表示する。キットは看護師が確認・承認するまで開放しない（安全制約）。
++**設計アプローチ**: 看護師が訪室するより先にロボットがキットを届け、患者画面に「立ち上がらずお待ちください」と表示する。キットは看護師が確認・承認するまで開放しない（安全制約）。これに加えて、ロボットが病棟内を巡回して患者に声掛けし、困りごとを能動的に拾い上げ、必要に応じて看護師へ要点付きで通知する（Phase 4.5）。
+ 
+ ---
+ 
+@@ -39,6 +41,26 @@ flowchart LR
+ 
+ `perception/pybullet_source.py`は、既存の`perception/camera_source.py`が定義する「フレームを`.frames()`で流すだけ」というインターフェースをそのまま実装しているだけなので、`perception/run_perception.py`や`perception/qr_detector.py`は本物のWebカメラ・合成動画・PyBulletシミュレーションのどれが相手でも一切コードを変えずに動きます。`run_simulated_delivery.py`もこの`perception`層と、状態遷移用のHTTP API(`VerificationClient`)を組み合わせているだけで、独自の照合・状態遷移ロジックは持ちません。
+ 
++### 巡回・見守りワークフローのアーキテクチャ（Phase 4.5）
++
++```mermaid
++flowchart TB
++    Sim2["backend/scripts/\nrun_simulated_rounding.py"] -->|HTTP| API2["/rounding/*, /escalations/*"]
++    API2 --> RoundSvc["rounding_service\n(状態遷移: ROUNDING_ALLOWED_TRANSITIONS)"]
++    RoundSvc --> NeedSvc["need_classification_service\n(ルールベース分類, 純粋関数)"]
++    RoundSvc --> EscSvc["escalation_service\n(看護師ack)"]
++    RoundSvc -->|"DELIVERY_REQUIRED時のみ"| WF2["workflow_service\n(既存の配送フロー)"]
++    RoundSvc --> Repo2["repositories.py"]
++    EscSvc --> Repo2
++    Repo2 --> DB2[("rounding_sessions\npatient_interactions\nnurse_escalations")]
++    RoundSvc -.->|"_log()"| Events2["robot_events\n(既存ログと共用)"]
++    EscSvc --> NurseUI["ui/nurse_dashboard\nEscalationsセクション"]
++    RoundSvc --> PatientUI["ui/patient_request_app\n(通知/安全表示)"]
++    Repo2 --> Analytics2["analytics_service\n→ /analytics/rounding-summary\n→ /analytics/escalation-breakdown"]
++```
++
++`rounding_service`の状態遷移ルール（`ROUNDING_ALLOWED_TRANSITIONS`）は、既存の配送フロー用`ALLOWED_TRANSITIONS`とは意図的に別辞書として`robot_service.py`に定義されています。両者を1つの辞書にまとめてしまうと、片方のワークフロー変更がもう片方の安全ゲート（`VERIFYING_PATIENT`→`DOCKING`のQR照合限定・`KIT_RELEASED`の看護師確認限定など）に気づかないまま影響してしまうリスクがあるためです。2つのワークフローが交わるのは、巡回中に「配送が必要」と分類された（`DELIVERY_REQUIRED`）ときの1点だけで、そこから先は既存の配送フローがそのまま引き継ぎます。
++
+ ---
+ 
+ ## 📦 現在実装済み
+@@ -68,8 +90,14 @@ flowchart LR
+ | DB整合性制約（DateTime統一・FK・ロボット単位同時タスク数の部分ユニークインデックス） | `backend/db/models.py`, `alembic/` | ✅ |
+ | Grafanaダッシュボード（Analytics APIと同内容をSQLで可視化、`docker-compose up`で自動プロビジョニング） | `grafana/provisioning/` | ✅ |
+ | PyBullet GUIでのローカル目視デモ | `backend/scripts/run_gui_demo.py` | ✅ |
++| 巡回・見守りワークフロー用ドメインモデル（rounding_sessions/patient_interactions/nurse_escalations、care_requestsへのsource/rounding_session_id追加） | `backend/db/models.py`, `alembic/` | ✅ |
++| 巡回状態遷移ルール・ルールベース要望分類・看護師エスカレーションのオーケストレーション | `backend/services/rounding_service.py`, `backend/services/need_classification_service.py`, `backend/services/escalation_service.py` | ✅ |
++| 巡回・エスカレーションAPI（`/rounding/*`、`/escalations/*`） | `backend/api/routes_rounding.py`, `backend/api/routes_escalations.py` | ✅ |
++| 巡回シミュレーション一括駆動（6シナリオ、看護師確認ゲートは既定で人間待ち） | `backend/scripts/run_simulated_rounding.py` | ✅ |
++| 看護師ダッシュボードEscalationsセクション・患者UI安全表示更新 | `ui/nurse_dashboard/app.py`, `ui/patient_request_app/app.py` | ✅ |
++| 巡回Analytics API・Grafanaダッシュボード（セッション概況・エスカレーションキュー） | `backend/services/analytics_service.py`, `grafana/provisioning/dashboards/rounding-overview.json`, `escalation-queue.json` | ✅ |
+ | 品質管理（ruff / mypy / pytest-cov / CI） | `ruff.toml`, `mypy.ini`, `.coveragerc`, `.github/workflows/pytest.yml` | ✅ |
+-| pytest テスト（159件） | `tests/` （API/workflow service/state machine/repositories/verification/perception/vision/analytics/Docker設定/PyBulletシミュレーション/Grafana設定/GUIデモ） | ✅ |
++| pytest テスト（249件） | `tests/` （API/workflow service/state machine/repositories/verification/perception/vision/analytics/Docker設定/PyBulletシミュレーション/Grafana設定/GUIデモ/巡回ワークフロー） | ✅ |
+ 
+ ## ❌ 未実装（今後の予定）
+ 
+@@ -77,6 +105,7 @@ flowchart LR
+ |------|------|------------|
+ | 実カメラでのリアルタイムQRスキャン | 合成動画/画像ディレクトリ/PyBulletシミュレーション入力では検証済み。実機Webカメラでの動作は未検証（`WebcamSource`自体はCodespacesのような画面なし環境では動かせない） | Phase 4 |
+ | ロボットの物理制御・ナビゲーション | PyBulletシーン内では`resetBasePositionAndOrientation`で位置を直接設定しているのみで、ホイールや関節による本物の駆動制御はまだ無い | Phase 4 |
++| 巡回ワークフローの実音声認識・実人物検出・LLMベースの要望分類 | 現状はシミュレーション/疑似入力（`input_mode="simulated"`）とルールベース分類のみ。当初の設計方針として意図的にスコープ外としている | Phase 5以降 |
+ | マルチロボット・複数病棟対応 | 未着手 | Phase 5 |
+ 
+ ## 🚀 Quick Start
+@@ -132,7 +161,7 @@ python -m backend.scripts.reset_demo_data
+ 
+ ## 🗂️ データモデル
+ 
+-`backend/db/models.py`で定義される5テーブル。タイムスタンプ列は全て`DateTime`型（PR15でSQLite/PostgreSQL両対応のまま`String`から統一）。以下のER図が示す`request_id`/`task_id`はSQLAlchemyレベルの`ForeignKey`制約として実際に強制されており（PR15）、`robot_tasks`には「ロボット単位で非終端状態のタスクは同時に1件まで」という安全制約を守るための部分ユニークインデックス（`UNIQUE(robot_id) WHERE state NOT IN ('IDLE','COMPLETED','ERROR')`）も張られている。
++`backend/db/models.py`で定義される8テーブル。タイムスタンプ列は全て`DateTime`型（PR15でSQLite/PostgreSQL両対応のまま`String`から統一）。以下のER図が示す`request_id`/`task_id`はSQLAlchemyレベルの`ForeignKey`制約として実際に強制されており（PR15）、`robot_tasks`には「ロボット単位で非終端状態のタスクは同時に1件まで」という安全制約を守るための部分ユニークインデックス（`UNIQUE(robot_id) WHERE state NOT IN ('IDLE','COMPLETED','ERROR')`）も張られている。
+ 
+ ```mermaid
+ erDiagram
+@@ -141,6 +170,10 @@ erDiagram
+     ROBOT_TASKS ||--o{ TASK_STATE_TRANSITIONS : "task_id"
+     CARE_REQUESTS ||--o{ ROBOT_EVENTS : "request_id"
+     ROBOT_TASKS ||--o{ ROBOT_EVENTS : "task_id"
++    ROUNDING_SESSIONS ||--o{ PATIENT_INTERACTIONS : "rounding_session_id"
++    ROUNDING_SESSIONS ||--o{ NURSE_ESCALATIONS : "rounding_session_id"
++    ROUNDING_SESSIONS ||--o{ CARE_REQUESTS : "rounding_session_id"
++    CARE_REQUESTS ||--o{ NURSE_ESCALATIONS : "request_id"
+ 
+     CARE_REQUESTS {
+         string id PK
+@@ -150,6 +183,8 @@ erDiagram
+         string status
+         datetime created_at
+         datetime completed_at
++        string source
++        string rounding_session_id FK
+     }
+     ROBOT_TASKS {
+         string id PK
+@@ -190,13 +225,57 @@ erDiagram
+         string event_type
+         text message
+     }
++    ROUNDING_SESSIONS {
++        string id PK
++        string robot_id
++        string room
++        string patient_id
++        string status
++        datetime started_at
++        datetime ended_at
++        text interaction_summary
++        string detected_need
++        string escalation_level
++        datetime created_at
++        datetime updated_at
++    }
++    PATIENT_INTERACTIONS {
++        int id PK
++        string rounding_session_id FK
++        string patient_id
++        string room
++        text prompt
++        text patient_response
++        string input_mode
++        string detected_need
++        string confidence
++        datetime created_at
++    }
++    NURSE_ESCALATIONS {
++        string id PK
++        string rounding_session_id FK
++        string request_id FK
++        string patient_id
++        string room
++        text summary
++        string priority
++        text reason
++        text suggested_action
++        string status
++        datetime created_at
++        datetime acknowledged_at
++        string acknowledged_by
++    }
+ ```
+ 
+-- **care_requests**: 患者リクエスト自体（何を・誰が・いつ）。ロボットワークフローの状態は持たない。
++- **care_requests**: 患者リクエスト自体（何を・誰が・いつ）。ロボットワークフローの状態は持たない。`source`（`patient_tablet`/`robot_rounding`/`nurse_manual`/`demo_seed`）と`rounding_session_id`（nullable）はPhase 4.5で追加され、リクエストが患者タブレット由来か巡回セッション由来かを区別する。
+ - **robot_tasks**: リクエストに対する実際のロボット実行（1タスク=1行、`state`が`robot_service.py`のステートマシン値）。ロボット単位（`robot_id`）で非終端状態（IDLE/COMPLETED以外）のタスクは同時に1件まで、という同時実行制約がある。
+ - **kit_verifications**: QR照合の**試行**ごとの1行（OK/NG問わず）。`patient_id`/`kit_id`は後方互換のためのエイリアスで、常に`scanned_patient_id`/`scanned_kit_id`と同じ値が書き込まれる。`expected_*`と`scanned_*`を分けることで、患者違いなのかキット違いなのかをフリーテキストの`message`を読まなくても判別できる（PR9）。
+ - **task_state_transitions**: `robot_tasks.state`が変化するたびの構造化された履歴（PR8）。`robot_events`が人間が読むログなのに対し、こちらは`trigger_type`/`triggered_by`を使って集計しやすくした分析用の記録（`/analytics/state-durations`が利用）。
+-- **robot_events**: 看護師ダッシュボードのログ表示に使う、人間可読なイベントログ。
++- **robot_events**: 看護師ダッシュボードのログ表示に使う、人間可読なイベントログ。巡回ワークフローのイベントもここに記録され、既存のログ表示と統合される。
++- **rounding_sessions**（Phase 4.5）: ロボットが病棟内を1回巡回する単位。`status`は`ROUNDING_ALLOWED_TRANSITIONS`（配送用`ALLOWED_TRANSITIONS`とは別辞書）の値を持つ。
++- **patient_interactions**（Phase 4.5）: 巡回セッション内の声掛け・応答1回ごとの記録。`detected_need`/`confidence`はルールベース分類（`need_classification_service.py`）の結果。
++- **nurse_escalations**（Phase 4.5）: 看護師へ通知すべき内容のキュー。`request_id`はnullable（配送を伴わない純粋な通知もある）。
+ 
+ ---
+ 
+@@ -209,6 +288,8 @@ erDiagram
+ | GET | `/analytics/summary` | 件数系の集計（総リクエスト数・完了/キャンセル数・エラータスク数・QR照合失敗率・平均完了時間） |
+ | GET | `/analytics/verification-failures` | QR照合NGの件数を失敗理由（`message`）別に集計 |
+ | GET | `/analytics/state-durations` | 各ロボット状態の平均滞在時間（`task_state_transitions`から算出、進行中で未確定の区間は除外） |
++| GET | `/analytics/rounding-summary` | 巡回セッション数・患者発見数・要望分類数・エスカレーション数・URGENT件数・平均ack時間（Phase 4.5） |
++| GET | `/analytics/escalation-breakdown` | `nurse_escalations`をpriority別/detected_need別/status別に集計（Phase 4.5） |
+ 
+ ### デモウォークスルー（seed → 起動 → curl）
+ 
+@@ -248,6 +329,41 @@ curl http://localhost:8000/analytics/state-durations
+ ]
+ ```
+ 
++`/analytics/rounding-summary`のレスポンス例（値は実行のたびに変わる）:
++
++```json
++{
++  "total_rounding_sessions": 6,
++  "patients_detected": 6,
++  "interactions_started": 6,
++  "needs_classified": 6,
++  "escalations_created": 4,
++  "urgent_escalations": 1,
++  "average_time_to_ack": 2.3
++}
++```
++
++`/analytics/escalation-breakdown`のレスポンス例:
++
++```json
++{
++  "by_priority": [
++    { "priority": "HIGH", "count": 2 },
++    { "priority": "URGENT", "count": 1 },
++    { "priority": "MEDIUM", "count": 1 }
++  ],
++  "by_detected_need": [
++    { "detected_need": "toileting", "count": 2 },
++    { "detected_need": "pain", "count": 1 },
++    { "detected_need": "water", "count": 1 }
++  ],
++  "by_status": [
++    { "status": "ACKNOWLEDGED", "count": 3 },
++    { "status": "PENDING", "count": 1 }
++  ]
++}
++```
++
+ ```bash
+ # 4. 使い終わったら削除（確認プロンプトあり、--yesでスキップ）
+ python -m backend.scripts.reset_demo_data --yes
+@@ -257,13 +373,15 @@ python -m backend.scripts.reset_demo_data --yes
+ 
+ ## 📈 モニタリング（Grafana、PR16）
+ 
+-`docker-compose up`すると、`/analytics/*`と同じ内容をSQLで直接可視化するGrafanaダッシュボードが3枚、手動セットアップなしで最初から使える状態になる（`grafana/provisioning/`でPostgreSQLデータソースとダッシュボードJSONを自動プロビジョニング）。
++`docker-compose up`すると、`/analytics/*`と同じ内容をSQLで直接可視化するGrafanaダッシュボードが5枚、手動セットアップなしで最初から使える状態になる（`grafana/provisioning/`でPostgreSQLデータソースとダッシュボードJSONを自動プロビジョニング）。
+ 
+ | ダッシュボード | 内容 |
+ |---------------|------|
+ | 完了/キャンセル数の推移 | `care_requests`を日次集計した完了・キャンセル件数の推移 |
+ | QR照合失敗率 | `kit_verifications`の全体NG率＋失敗理由（`message`）別の内訳 |
+ | 状態別平均滞在時間 | `task_state_transitions`に対する`LEAD()`ウィンドウ関数で、`/analytics/state-durations`と同じロジックをSQLで再現 |
++| 巡回セッション概況（Phase 4.5） | 巡回セッション数・患者発見数・要望分類数・エスカレーション数・URGENT件数・平均ack時間、日次セッション数の推移 |
++| エスカレーションキュー（Phase 4.5） | 未確認(PENDING)件数・平均ack時間、priority別/need別の内訳（円グラフ）、status別件数（テーブル） |
+ 
+ ```bash
+ docker-compose up --build
+@@ -305,6 +423,21 @@ python -m backend.scripts.run_simulated_delivery --nurse-token $NURSE_TOKEN
+ python -m backend.scripts.run_simulated_delivery --nurse-token $NURSE_TOKEN --auto-confirm
+ ```
+ 
++### 巡回・見守りワークフロー一括駆動（`backend/scripts/run_simulated_rounding.py`、Phase 4.5）
++
++実際の人物検出・音声認識は行わず（Phase 4.5の設計方針どおり）、6つの名前付きシナリオ（`rounding_normal` / `rounding_patient_detected` / `rounding_toileting_escalation` / `rounding_water_request` / `rounding_no_need` / `rounding_urgent_pain`）それぞれに紐づく疑似患者応答を、本物のAPI（`/rounding/*`、`/escalations/*`）越しに一気通貫で流す開発・デモ用スクリプト。分類結果（`detected_need`/`escalation_level`）を期待値と照合するので、単なるデモではなく`need_classification_service`のルールセットに対するE2Eスモークテストも兼ねる。
++
++```bash
++python -m backend.scripts.run_simulated_rounding --scenario rounding_toileting_escalation --nurse-token $NURSE_TOKEN
++```
++
++**安全上の設計**: `run_simulated_delivery.py`と全く同じ思想。エスカレーションが発生するシナリオ（`NURSE_NOTIFICATION`/`URGENT_ESCALATION`ルート）では、このスクリプトは既定では`WAITING_FOR_NURSE_ACK`で**止まり、人間の確認を待つ**（タイムアウトすると、手動で叩けるcurlコマンドを表示してエラー終了する）。`--auto-ack`を明示的に付けたときだけスクリプト自身がこのボタンを押す。`INFORMATION_ONLY`ルート（`rounding_normal`/`rounding_no_need`）はそもそも看護師ゲートが無いので、`--auto-ack`の有無に関わらず常に`COMPLETED`まで進む。`tests/test_run_simulated_rounding.py`にはこのゲートが既定では回避されないことを保証する回帰テストがある。
++
++```bash
++# 看護師確認を自動で行う場合（デモ・CI向け）
++python -m backend.scripts.run_simulated_rounding --scenario rounding_toileting_escalation --nurse-token $NURSE_TOKEN --auto-ack
++```
++
+ ### ローカルGUIデモ（`backend/scripts/run_gui_demo.py`、PR20）
+ 
+ 上記は全てヘッドレス（`p.DIRECT`、画面表示なし）で、CI/Codespacesでも動く。ロボットが実際に動く様子を画面で見たい場合は、ディスプレイのあるローカルマシン限定で以下を実行する（**Codespacesでは動かない**）。
+@@ -336,6 +469,19 @@ PyBulletのGUIウィンドウが開き、ドック位置からベッドサイド
+ | GET | `/analytics/summary` | - | 件数系の集計 |
+ | GET | `/analytics/verification-failures` | - | QR照合失敗の内訳 |
+ | GET | `/analytics/state-durations` | - | 状態別の平均滞在時間 |
++| POST | `/rounding/start` | - | 巡回セッション開始 |
++| GET | `/rounding/{id}` | - | 巡回セッション詳細 |
++| POST | `/rounding/{id}/detect-patient` | - | 患者発見 |
++| POST | `/rounding/{id}/start-interaction` | - | 声掛け開始（プロンプト取得） |
++| POST | `/rounding/{id}/classify-need` | - | 患者応答の登録・要望分類 |
++| POST | `/rounding/{id}/provide-information` | - | 情報提供のみで完了（エスカレーション不要時） |
++| POST | `/rounding/{id}/escalate` | - | 看護師エスカレーション作成 |
++| POST | `/rounding/{id}/require-delivery` | - | 配送フローへ接続（既存の配送ワークフローに合流） |
++| GET | `/escalations` | - | エスカレーション一覧（PENDING優先） |
++| GET | `/escalations/{id}` | - | エスカレーション詳細 |
++| POST | `/escalations/{id}/ack` | 🔒 | 看護師確認 |
++| GET | `/analytics/rounding-summary` | - | 巡回ワークフローの件数系集計 |
++| GET | `/analytics/escalation-breakdown` | - | エスカレーションのpriority/need/status別内訳 |
+ 
+ 🔒 = x-nurse-token ヘッダー必須
+ 
+@@ -344,10 +490,11 @@ PyBulletのGUIウィンドウが開き、ドック位置からベッドサイド
+ ## ⚠️ Current Limitations
+ 
+ - 1ロボットにつき同時にアクティブなタスクは1件まで（`robot_id`単位。デフォルトロボットは1台のみ運用中）
+-- PostgreSQL/SQLAlchemy永続化（`care_requests`/`robot_tasks`/`kit_verifications`/`robot_events`/`task_state_transitions`）。テーブル間の外部キー制約とロボット単位の同時タスク数制約はDBレベルで強制（PR15）
++- PostgreSQL/SQLAlchemy永続化（`care_requests`/`robot_tasks`/`kit_verifications`/`robot_events`/`task_state_transitions`/`rounding_sessions`/`patient_interactions`/`nurse_escalations`）。テーブル間の外部キー制約とロボット単位の同時タスク数制約はDBレベルで強制（PR15）
+ - QR照合はダッシュボード上／PyBulletシミュレーション上でシミュレート
+ - 物理制御・ナビゲーションは未実装（PyBulletシーン内でも位置を直接設定しているのみ）
+ - Dockerイメージはローカル/デモ用のcomposeスタック向けで、本番デプロイ向けの構成（secrets管理、`alembic upgrade head`の明示実行など）は別途必要
++- 巡回ワークフローは実音声認識・実人物検出を行わず、シミュレーション/疑似入力とルールベース分類のみ（LLMは使用していない）
+ - 本プロトタイプは医療機器ではありません
+ 
+ ---
+@@ -359,7 +506,8 @@ PyBulletのGUIウィンドウが開き、ドック位置からベッドサイド
+ | Phase 1–2 | API設計・UI分離・ステートマシン | ✅ |
+ | Phase 3 | PostgreSQL化・タスクリソースモデル・Perception・合成QRデモ・評価ベンチマーク・CI/品質整備 | ✅ |
+ | Phase 3.5 | 状態遷移履歴・QR照合詳細化・Analytics API・デモデータ・Docker化・README刷新 | ✅ |
+-| Phase 4 | ヘッドレスPyBulletシミュレーション基盤・QRオーバーレイ・配送フロー一括駆動・DB整合性制約（DateTime/FK/部分ユニークインデックス）・Grafanaダッシュボード・ローカルGUIデモ（pytest 159件）。実カメラ対応／物理制御（ホイール・関節）は未着手 | 🚧 ほぼ完了 |
++| Phase 4 | ヘッドレスPyBulletシミュレーション基盤・QRオーバーレイ・配送フロー一括駆動・DB整合性制約（DateTime/FK/部分ユニークインデックス）・Grafanaダッシュボード・ローカルGUIデモ。実カメラ対応／物理制御（ホイール・関節）は未着手 | ✅ |
++| Phase 4.5 | 巡回・見守りワークフロー（ドメインモデル・状態遷移・ルールベース要望分類・看護師エスカレーション・API・シミュレーション・ダッシュボード・Analytics/Grafana拡張、pytest 249件）。実音声認識・実人物検出は未着手 | ✅ |
+ | Phase 5 | 実機MVP・マルチロボット・LeRobot | 📋 |
+ 
+ ---
+-- 
+2.43.0
+

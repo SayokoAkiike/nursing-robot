@@ -119,6 +119,33 @@ def list_patients_view() -> list:
     return [get_patient_view(p["id"]) for p in repositories.list_patients()]
 
 
+def list_robots_view() -> list:
+    """Every seeded robot plus its live IDLE/BUSY status (item 5), derived
+    from `robot_tasks` the same way `workflow_service.get_current_state()`
+    derives one robot's status -- `repositories.get_active_task_for_robot`
+    is the shared DB-layer function both call, so this can't drift from
+    what the delivery flow itself considers "busy". Lets a caller (a
+    fleet-status view, or `pick_available_robot_id()` below) see every
+    robot's status at once instead of only ROBOT_1's."""
+    return [
+        {**robot, "status": "BUSY" if repositories.get_active_task_for_robot(robot["id"]) else "IDLE"}
+        for robot in repositories.list_robots()
+    ]
+
+
+def pick_available_robot_id() -> "str | None":
+    """First IDLE robot's id, or None if every seeded robot is BUSY (or
+    none are seeded yet). Optional helper for a future caller that wants
+    to assign a delivery to *some* free robot rather than a specific one
+    -- not wired into `workflow_service.create_request()`'s default,
+    which deliberately stays DEFAULT_ROBOT_ID so existing behavior is
+    unchanged unless a caller opts in."""
+    for robot in list_robots_view():
+        if robot["status"] == "IDLE":
+            return robot["id"]
+    return None
+
+
 def list_wards_view() -> list:
     """Nested Ward -> Room -> Bed (+ occupying patient_id, if any) tree, for
     a future ward-map view. The naive per-row query loop below is fine at
