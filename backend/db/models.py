@@ -319,3 +319,92 @@ class NurseEscalationRow(Base):
     escalated_count = Column(Integer, nullable=False, default=0)
     last_escalated_at = Column(DateTime, nullable=True)
     source = Column(String, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Domain registry tables (item 4): Hospital -> Ward -> Room -> Bed, plus
+# Patient/Nurse/Robot. Purely additive, same spirit as PR22's rounding
+# tables -- nothing above (care_requests/robot_tasks/rounding_sessions/
+# nurse_escalations, all of which use plain patient_id/robot_id/room
+# *string* columns) is changed to a real FK against these new tables in this
+# same change. See backend/services/domain_service.py's module docstring for
+# why that wiring is deliberately deferred to its own follow-up rather than
+# bundled here.
+# ---------------------------------------------------------------------------
+
+
+class HospitalRow(Base):
+    __tablename__ = "hospitals"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+
+
+class WardRow(Base):
+    __tablename__ = "wards"
+    __table_args__ = (Index("ix_wards_hospital_id", "hospital_id"),)
+
+    id = Column(String, primary_key=True)
+    hospital_id = Column(String, ForeignKey("hospitals.id"), nullable=False)
+    name = Column(String, nullable=False)
+
+
+class RoomRow(Base):
+    __tablename__ = "rooms"
+    __table_args__ = (Index("ix_rooms_ward_id", "ward_id"),)
+
+    id = Column(String, primary_key=True)
+    ward_id = Column(String, ForeignKey("wards.id"), nullable=False)
+    number = Column(String, nullable=False)
+
+
+class BedRow(Base):
+    __tablename__ = "beds"
+    __table_args__ = (Index("ix_beds_room_id", "room_id"),)
+
+    id = Column(String, primary_key=True)
+    room_id = Column(String, ForeignKey("rooms.id"), nullable=False)
+    label = Column(String, nullable=False)
+
+
+class PatientRow(Base):
+    """Registry entry for a patient, keyed by the same string id already
+    used throughout care_requests/robot_tasks/rounding_sessions/etc. (e.g.
+    "PATIENT_A_ROOM_203"). Adds structured hospital/ward/room/bed placement
+    and the allowed_kits safety list on top of what previously lived only in
+    the `PATIENTS` dict in backend/core/config.py -- see
+    backend/services/domain_service.py's `seed_default_domain_data()`,
+    which mirrors that same dict into this table.
+
+    `allowed_kits` is stored as a comma-separated string (e.g.
+    "KIT_TOILETING_A,KIT_WATER,ALERT_NURSE_ONLY"), mirroring
+    `PATIENTS[...]["allowed_kits"]`'s list shape without adding a
+    dependency on a JSON column type -- see domain_service.py's
+    `split_allowed_kits()`/`join_allowed_kits()`.
+    """
+
+    __tablename__ = "patients"
+    __table_args__ = (Index("ix_patients_bed_id", "bed_id"),)
+
+    id = Column(String, primary_key=True)
+    display_name = Column(String, nullable=False)
+    bed_id = Column(String, ForeignKey("beds.id"), nullable=True)
+    allowed_kits = Column(Text, nullable=True)
+
+
+class NurseRow(Base):
+    __tablename__ = "nurses"
+    __table_args__ = (Index("ix_nurses_ward_id", "ward_id"),)
+
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    ward_id = Column(String, ForeignKey("wards.id"), nullable=True)
+
+
+class RobotRow(Base):
+    __tablename__ = "robots"
+    __table_args__ = (Index("ix_robots_hospital_id", "hospital_id"),)
+
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False)
+    hospital_id = Column(String, ForeignKey("hospitals.id"), nullable=True)

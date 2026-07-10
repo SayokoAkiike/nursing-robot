@@ -97,6 +97,7 @@ flowchart TB
 | 看護師ダッシュボードEscalationsセクション・患者UI安全表示更新 | `ui/nurse_dashboard/app.py`, `ui/patient_request_app/app.py` | ✅ |
 | 巡回Analytics API・Grafanaダッシュボード（セッション概況・エスカレーションキュー） | `backend/services/analytics_service.py`, `grafana/provisioning/dashboards/rounding-overview.json`, `escalation-queue.json` | ✅ |
 | 品質管理（ruff / mypy / pytest-cov / CI） | `ruff.toml`, `mypy.ini`, `.coveragerc`, `.github/workflows/pytest.yml` | ✅ |
+| ドメイン登録テーブル（Hospital/Ward/Room/Bed/Patient/Nurse/Robot、読み取り専用API、シードスクリプト） | `backend/db/models.py`, `backend/services/domain_service.py`, `backend/api/routes_domain.py`, `backend/scripts/seed_domain_data.py` | ✅ |
 | pytest テスト（249件） | `tests/` （API/workflow service/state machine/repositories/verification/perception/vision/analytics/Docker設定/PyBulletシミュレーション/Grafana設定/GUIデモ/巡回ワークフロー） | ✅ |
 
 ## ❌ 未実装（今後の予定）
@@ -276,6 +277,10 @@ erDiagram
 - **rounding_sessions**（Phase 4.5）: ロボットが病棟内を1回巡回する単位。`status`は`ROUNDING_ALLOWED_TRANSITIONS`（配送用`ALLOWED_TRANSITIONS`とは別辞書）の値を持つ。
 - **patient_interactions**（Phase 4.5）: 巡回セッション内の声掛け・応答1回ごとの記録。`detected_need`/`confidence`はルールベース分類（`need_classification_service.py`）の結果。
 - **nurse_escalations**（Phase 4.5）: 看護師へ通知すべき内容のキュー。`request_id`はnullable（配送を伴わない純粋な通知もある）。
+
+### ドメイン登録テーブル（Hospital/Ward/Room/Bed/Patient/Nurse/Robot）
+
+`backend/core/config.py`の`PATIENTS`辞書（患者2名分をハードコード）に加えて、`hospitals` / `wards` / `rooms` / `beds` / `patients` / `nurses` / `robots`の7テーブルを追加し、病院組織構造を実データとして持てるようにした。既存の`care_requests`/`robot_tasks`/`rounding_sessions`などが使う`patient_id`/`robot_id`/`room`は引き続きプレーンな文字列のままで、このテーブル群へのFK化はしていない（安全制約に関わる配送・巡回フローのテスト全体に影響する変更のため、意図的に別PRへ切り出す）。`backend/services/domain_service.py`の`seed_default_domain_data()`が、既存の`PATIENTS`辞書と`workflow_service.DEFAULT_ROBOT_ID`と同じ内容（病院1・病棟1・患者2名分の部屋とベッド・看護師1名・ロボット1台）を投入し、`python -m backend.scripts.seed_domain_data`で明示的に実行できる（`seed_demo_data.py`と同じく自動実行はしない）。読み取り専用の`GET /patients`・`GET /patients/{id}`・`GET /robots`・`GET /wards`（病棟→部屋→ベッド→入居患者のネスト構造）で参照できる。
 
 ---
 
@@ -482,6 +487,10 @@ PyBulletのGUIウィンドウが開き、ドック位置からベッドサイド
 | POST | `/escalations/{id}/ack` | 🔒 | 看護師確認 |
 | GET | `/analytics/rounding-summary` | - | 巡回ワークフローの件数系集計 |
 | GET | `/analytics/escalation-breakdown` | - | エスカレーションのpriority/need/status別内訳 |
+| GET | `/patients` | - | 患者一覧（ドメイン登録テーブル、room_number/ward_name/allowed_kits付き） |
+| GET | `/patients/{id}` | - | 患者詳細 |
+| GET | `/robots` | - | ロボット一覧 |
+| GET | `/wards` | - | 病棟一覧（部屋→ベッド→入居患者のネスト構造） |
 
 🔒 = x-nurse-token ヘッダー必須
 

@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 
 from backend.api import (
     routes_analytics,
+    routes_domain,
     routes_escalations,
     routes_logs,
     routes_requests,
@@ -60,4 +61,5 @@ app.include_router(routes_logs.router)
 app.include_router(routes_analytics.router)
 app.include_router(routes_rounding.router)
 app.include_router(routes_escalations.router)
+app.include_router(routes_domain.router)
 
