@@ -41,7 +41,7 @@ itself.
 import uuid
 from datetime import datetime
 
-from backend.core.config import DEFAULT_PATIENT_ID, REQUEST_TYPES
+from backend.core.config import DEFAULT_PATIENT_ID, PATIENTS, REQUEST_TYPES
 from backend.core.errors import ConflictError, DomainError, ForbiddenError, NotFoundError
 from backend.db import repositories
 from backend.services import verification_service
@@ -108,6 +108,55 @@ def _record_transition(
             "triggered_by": triggered_by,
             "reason": reason,
             "occurred_at": datetime.now(),
+        }
+    )
+
+
+def _raise_error_escalation(
+    *, request_id: str, patient_id: str | None, summary: str, reason: str
+) -> None:
+    """Surface a delivery-flow ERROR in the same `nurse_escalations` queue
+    the rounding workflow already raises into (rounding_service.escalate()
+    / the nurse dashboard's Escalations section), instead of leaving it
+    discoverable only via the task's ERROR state and the robot_events
+    log.
+
+    `rounding_session_id` is left None -- this escalation did not come
+    from a rounding session, which is exactly why that column had to
+    become nullable (see the migration and NurseEscalationRow's docstring
+    in backend/db/models.py). `source="delivery_error"` is how
+    /analytics/escalation-breakdown and the dashboard tell these apart
+    from rounding-originated rows.
+
+    Always raised at URGENT and never re-evaluated by
+    escalation_service.check_and_escalate_overdue() past that point --
+    every call site below is already a safety-relevant failure (a
+    patient/kit mismatch, an attempt to release a kit without nurse
+    confirmation, or a manual emergency stop), not something with a
+    lower-urgency case to weigh the way need_classification_service does
+    for the rounding flow. Failing to insert this row (e.g. a DB error)
+    is deliberately not caught here -- it should surface the same way any
+    other repositories.* failure would, rather than being swallowed
+    silently right after a safety-relevant event.
+    """
+    room = PATIENTS.get(patient_id, {}).get("room") if patient_id else None
+    now = datetime.now()
+    repositories.insert_nurse_escalation(
+        {
+            "id": str(uuid.uuid4())[:8],
+            "rounding_session_id": None,
+            "request_id": request_id,
+            "patient_id": patient_id,
+            "room": room,
+            "summary": summary,
+            "priority": "URGENT",
+            "reason": reason,
+            "suggested_action": "至急、現場を確認し、ロボットの状態を確認してください。",
+            "status": "PENDING",
+            "created_at": now,
+            "acknowledged_at": None,
+            "acknowledged_by": None,
+            "source": "delivery_error",
         }
     )
 
@@ -258,6 +307,8 @@ def advance_state(request_id: str, next_state: str) -> dict:
     task = _require_task(request_id)
     current = task["state"]
     now = datetime.now()
+    req = repositories.get_care_request(request_id)
+    patient_id = req.get("patient_id") if req else None
 
     if next_state == "KIT_RELEASED" and current != "WAITING_FOR_NURSE_CONFIRMATION":
         repositories.update_task_state(task["id"], "ERROR", now)
@@ -276,6 +327,12 @@ def advance_state(request_id: str, next_state: str) -> dict:
             to_state="ERROR",
             trigger_type="manual_transition",
             triggered_by="nurse_token",
+            reason="KIT_RELEASED attempted without nurse confirmation",
+        )
+        _raise_error_escalation(
+            request_id=request_id,
+            patient_id=patient_id,
+            summary=f"{patient_id or '不明な患者'} 宛のタスクで、看護師確認前にKIT_RELEASEDが試行されエラー停止しました。",
             reason="KIT_RELEASED attempted without nurse confirmation",
         )
         raise ForbiddenError("Nurse confirmation required before KIT_RELEASED")
@@ -297,6 +354,12 @@ def advance_state(request_id: str, next_state: str) -> dict:
             to_state="ERROR",
             trigger_type="manual_transition",
             triggered_by="nurse_token",
+            reason=f"Invalid transition {current} -> {next_state}",
+        )
+        _raise_error_escalation(
+            request_id=request_id,
+            patient_id=patient_id,
+            summary=f"{patient_id or '不明な患者'} 宛のタスクで不正な状態遷移（{current} → {next_state}）が試行されエラー停止しました。",
             reason=f"Invalid transition {current} -> {next_state}",
         )
         raise DomainError(f"Invalid transition: {current} -> {next_state}")
@@ -368,6 +431,15 @@ def verify_ids(request_id: str, patient_id: str, kit_id: str) -> dict:
             triggered_by="verification_service",
             reason="patient_id mismatch",
         )
+        _raise_error_escalation(
+            request_id=request_id,
+            patient_id=req.get("patient_id"),
+            summary=(
+                f"{req.get('patient_id')} 宛のキットで患者ID不一致"
+                f"（スキャン値: {patient_id}）によりエラー停止しました。"
+            ),
+            reason="patient_id mismatch",
+        )
         raise DomainError("patient_id mismatch")
 
     if kit_id != task.get("kit_id"):
@@ -402,6 +474,15 @@ def verify_ids(request_id: str, patient_id: str, kit_id: str) -> dict:
             to_state="ERROR",
             trigger_type="verification",
             triggered_by="verification_service",
+            reason="kit_id mismatch",
+        )
+        _raise_error_escalation(
+            request_id=request_id,
+            patient_id=req.get("patient_id"),
+            summary=(
+                f"{req.get('patient_id')} 宛のキットでキットID不一致"
+                f"（スキャン値: {kit_id}）によりエラー停止しました。"
+            ),
             reason="kit_id mismatch",
         )
         raise DomainError("kit_id mismatch")
@@ -461,6 +542,12 @@ def verify_ids(request_id: str, patient_id: str, kit_id: str) -> dict:
         triggered_by="verification_service",
         reason=result["message"],
     )
+    _raise_error_escalation(
+        request_id=request_id,
+        patient_id=req.get("patient_id"),
+        summary=f"{req.get('patient_id')} 宛のキットでQR照合NG（{result['message']}）によりエラー停止しました。",
+        reason=result["message"],
+    )
     raise DomainError(result["message"])
 
 
@@ -468,6 +555,8 @@ def emergency_stop(request_id: str) -> dict:
     task = _require_task(request_id)
     now = datetime.now()
     prev = task["state"]
+    req = repositories.get_care_request(request_id)
+    patient_id = req.get("patient_id") if req else None
     repositories.update_task_state(task["id"], "ERROR", now)
     _log(
         EventType.EMERGENCY_STOP,
@@ -484,6 +573,12 @@ def emergency_stop(request_id: str) -> dict:
         to_state="ERROR",
         trigger_type="emergency_stop",
         triggered_by="nurse_token",
+    )
+    _raise_error_escalation(
+        request_id=request_id,
+        patient_id=patient_id,
+        summary=f"{patient_id or '不明な患者'} 宛のタスクで緊急停止が実行されました（直前の状態: {prev}）。",
+        reason="Emergency stop triggered",
     )
     return _view_or_error(request_id)
 
