@@ -21,6 +21,8 @@ consistent, but a caller that needs the *authoritative, safety-checked*
 list should keep reading `backend.core.config.PATIENTS` until a deliberate
 follow-up switches that call site over.
 """
+from typing import Sequence
+
 from backend.core.config import PATIENTS
 from backend.db import repositories
 
@@ -33,11 +35,11 @@ DEFAULT_ROBOT_ID = "ROBOT_1"
 DEFAULT_NURSE_ID = "NURSE_DEFAULT"
 
 
-def join_allowed_kits(kit_ids: list) -> str:
+def join_allowed_kits(kit_ids: Sequence[str]) -> str:
     return ",".join(kit_ids)
 
 
-def split_allowed_kits(value: "str | None") -> list:
+def split_allowed_kits(value: "str | None") -> list[str]:
     if not value:
         return []
     return [k for k in value.split(",") if k]
