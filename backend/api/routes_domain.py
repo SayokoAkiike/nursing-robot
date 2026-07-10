@@ -6,7 +6,6 @@ nothing here is a nurse-gated action.
 from fastapi import APIRouter
 
 from backend.core.errors import NotFoundError
-from backend.db import repositories
 from backend.services import domain_service
 
 router = APIRouter(tags=["domain"])
@@ -27,7 +26,10 @@ def get_patient(patient_id: str):
 
 @router.get("/robots")
 def list_robots():
-    return repositories.list_robots()
+    """Item 5: each robot now also carries a live `status` (IDLE/BUSY),
+    via `domain_service.list_robots_view()` -- previously just the static
+    registry row (`repositories.list_robots()`), no status field."""
+    return domain_service.list_robots_view()
 
 
 @router.get("/wards")

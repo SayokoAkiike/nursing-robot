@@ -98,7 +98,8 @@ flowchart TB
 | 巡回Analytics API・Grafanaダッシュボード（セッション概況・エスカレーションキュー） | `backend/services/analytics_service.py`, `grafana/provisioning/dashboards/rounding-overview.json`, `escalation-queue.json` | ✅ |
 | 品質管理（ruff / mypy / pytest-cov / CI） | `ruff.toml`, `mypy.ini`, `.coveragerc`, `.github/workflows/pytest.yml` | ✅ |
 | ドメイン登録テーブル（Hospital/Ward/Room/Bed/Patient/Nurse/Robot、読み取り専用API、シードスクリプト） | `backend/db/models.py`, `backend/services/domain_service.py`, `backend/api/routes_domain.py`, `backend/scripts/seed_domain_data.py` | ✅ |
-| pytest テスト（249件） | `tests/` （API/workflow service/state machine/repositories/verification/perception/vision/analytics/Docker設定/PyBulletシミュレーション/Grafana設定/GUIデモ/巡回ワークフロー） | ✅ |
+| マルチロボット対応（配送ワークフローの`robot_id`パラメータ化、ロボット単位のIDLE/BUSYステータス、巡回セッションの担当ロボットへの配送引き継ぎ） | `backend/services/workflow_service.py`, `backend/services/rounding_service.py`, `backend/services/domain_service.py`, `backend/api/routes_requests.py`, `backend/api/routes_domain.py` | ✅ |
+| pytest テスト（293件） | `tests/` （API/workflow service/state machine/repositories/verification/perception/vision/analytics/Docker設定/PyBulletシミュレーション/Grafana設定/GUIデモ/巡回ワークフロー/ドメイン登録/マルチロボット） | ✅ |
 
 ## ❌ 未実装（今後の予定）
 
@@ -282,6 +283,16 @@ erDiagram
 
 `backend/core/config.py`の`PATIENTS`辞書（患者2名分をハードコード）に加えて、`hospitals` / `wards` / `rooms` / `beds` / `patients` / `nurses` / `robots`の7テーブルを追加し、病院組織構造を実データとして持てるようにした。既存の`care_requests`/`robot_tasks`/`rounding_sessions`などが使う`patient_id`/`robot_id`/`room`は引き続きプレーンな文字列のままで、このテーブル群へのFK化はしていない（安全制約に関わる配送・巡回フローのテスト全体に影響する変更のため、意図的に別PRへ切り出す）。`backend/services/domain_service.py`の`seed_default_domain_data()`が、既存の`PATIENTS`辞書と`workflow_service.DEFAULT_ROBOT_ID`と同じ内容（病院1・病棟1・患者2名分の部屋とベッド・看護師1名・ロボット1台）を投入し、`python -m backend.scripts.seed_domain_data`で明示的に実行できる（`seed_demo_data.py`と同じく自動実行はしない）。読み取り専用の`GET /patients`・`GET /patients/{id}`・`GET /robots`・`GET /wards`（病棟→部屋→ベッド→入居患者のネスト構造）で参照できる。
 
+### マルチロボット対応
+
+`robot_tasks`にはPR15の時点で「ロボット単位（`robot_id`）で非終端状態のタスクは同時に1件まで」という部分ユニークインデックス（`ux_robot_tasks_active_robot`）がすでに張られており、データモデルとしては複数ロボットに以前から対応していた。ただし配送フロー側の`workflow_service.py`はその上で常に`DEFAULT_ROBOT_ID`（`"ROBOT_1"`）1台にしか実際には割り当てておらず、`tests/test_workflow_service.py::test_concurrency_guard_is_per_robot_not_global`がそのギャップを自らのコメントで明記していた。今回、そのギャップをサービス層で解消した。
+
+- `workflow_service.create_request()` / `get_current_state()`が任意の`robot_id`引数を取るようになった（未指定時は従来どおり`DEFAULT_ROBOT_ID`、既存呼び出し元の挙動は変わらない）。
+- `_view()`が返す辞書に`robot_id`が追加され、`GET /requests` / `GET /requests/{id}` / `GET /state`のレスポンス、および看護師ダッシュボードのタスク表示行から、どのロボットのタスクかが分かるようになった。
+- `POST /requests`（`RequestCreate`スキーマ）が`robot_id`を任意項目として受け付ける（`RoundingStart.robot_id`と同じパターン）。
+- `rounding_service.require_delivery()`が、巡回セッション自身の`robot_id`（`start_rounding()`で指定されたロボット）を配送タスクへそのまま引き継ぐようになった。これまでは巡回ロボットが`ROBOT_2`であっても、配送タスクは常に`DEFAULT_ROBOT_ID`（`ROBOT_1`）へ暗黙に割り当てられていた。
+- `domain_service.list_robots_view()`が、登録済みの各ロボットに`repositories.get_active_task_for_robot()`由来のライブな`status`（`IDLE`/`BUSY`）を付与して返す。`GET /robots`のレスポンスに反映され、`domain_service.pick_available_robot_id()`（空いているロボットのidを1台返す、全て稼働中なら`None`）の土台にもなっている。
+
 ---
 
 ## 📊 Analytics API（PR10、PR11）
@@ -460,9 +471,9 @@ PyBulletのGUIウィンドウが開き、ドック位置からベッドサイド
 
 | Method | Path | 認証 | 説明 |
 |--------|------|------|------|
-| GET | `/state` | - | 現在の状態 |
-| GET | `/requests` | - | リクエスト一覧（現状は最大1件） |
-| POST | `/requests` | - | 患者リクエスト作成 |
+| GET | `/state?robot_id=` | - | 現在の状態（`robot_id`省略時はデフォルトロボット） |
+| GET | `/requests` | - | リクエスト一覧（各行に`robot_id`を含む） |
+| POST | `/requests` | - | 患者リクエスト作成（任意で`robot_id`を指定可能） |
 | GET | `/requests/{id}` | - | リクエスト詳細 |
 | POST | `/requests/{id}/cancel` | - | 患者キャンセル |
 | POST | `/tasks/{id}/transition` | 🔒 | 状態遷移 |
@@ -489,7 +500,7 @@ PyBulletのGUIウィンドウが開き、ドック位置からベッドサイド
 | GET | `/analytics/escalation-breakdown` | - | エスカレーションのpriority/need/status別内訳 |
 | GET | `/patients` | - | 患者一覧（ドメイン登録テーブル、room_number/ward_name/allowed_kits付き） |
 | GET | `/patients/{id}` | - | 患者詳細 |
-| GET | `/robots` | - | ロボット一覧 |
+| GET | `/robots` | - | ロボット一覧（各ロボットに`status`＝IDLE/BUSYを含む） |
 | GET | `/wards` | - | 病棟一覧（部屋→ベッド→入居患者のネスト構造） |
 
 🔒 = x-nurse-token ヘッダー必須
@@ -498,7 +509,7 @@ PyBulletのGUIウィンドウが開き、ドック位置からベッドサイド
 
 ## ⚠️ Current Limitations
 
-- 1ロボットにつき同時にアクティブなタスクは1件まで（`robot_id`単位。デフォルトロボットは1台のみ運用中）
+- 1ロボットにつき同時にアクティブなタスクは1件まで（`robot_id`単位）。配送・巡回とも複数ロボットへの割り当てはサービス層/APIとして可能になったが、「どの患者にどのロボットを自動で割り当てるか」（最寄りの空きロボットを選ぶ、等）は`domain_service.pick_available_robot_id()`という土台のみで、まだ呼び出し元には自動配線していない。デモのseedデータもロボット1台のみ
 - PostgreSQL/SQLAlchemy永続化（`care_requests`/`robot_tasks`/`kit_verifications`/`robot_events`/`task_state_transitions`/`rounding_sessions`/`patient_interactions`/`nurse_escalations`）。テーブル間の外部キー制約とロボット単位の同時タスク数制約はDBレベルで強制（PR15）
 - QR照合はダッシュボード上／PyBulletシミュレーション上でシミュレート
 - 物理制御・ナビゲーションは未実装（PyBulletシーン内でも位置を直接設定しているのみ）

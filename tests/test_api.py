@@ -34,7 +34,24 @@ def test_get_state(api_client):
 def test_create_request(api_client):
     r = api_client.post("/requests", json={"request_type": "toileting"})
     assert r.status_code == 200
-    assert r.json()["robot_state"] == "REQUEST_RECEIVED"
+    body = r.json()
+    assert body["robot_state"] == "REQUEST_RECEIVED"
+    # Item 5: defaults to DEFAULT_ROBOT_ID when the caller doesn't specify one.
+    assert body["robot_id"] == "ROBOT_1"
+
+
+def test_create_request_with_explicit_robot_id(api_client):
+    """Item 5: POST /requests now accepts an optional robot_id, and /state
+    can be scoped to it -- two different robots can each have their own
+    active request at the same time via the real API surface."""
+    r1 = api_client.post("/requests", json={"request_type": "toileting", "robot_id": "ROBOT_1"})
+    r2 = api_client.post("/requests", json={"request_type": "water", "robot_id": "ROBOT_2"})
+    assert r1.status_code == 200 and r2.status_code == 200
+    assert r1.json()["robot_id"] == "ROBOT_1"
+    assert r2.json()["robot_id"] == "ROBOT_2"
+
+    assert api_client.get("/state", params={"robot_id": "ROBOT_2"}).json()["robot_state"] == "REQUEST_RECEIVED"
+    assert api_client.get("/state").json()["robot_state"] == "REQUEST_RECEIVED"
 
 
 def test_unknown_request_type(api_client):

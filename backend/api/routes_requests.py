@@ -15,8 +15,8 @@ router = APIRouter(tags=["requests"])
 
 
 @router.get("/state")
-def get_state():
-    return workflow_service.get_current_state()
+def get_state(robot_id: str = workflow_service.DEFAULT_ROBOT_ID):
+    return workflow_service.get_current_state(robot_id)
 
 
 @router.get("/requests")
@@ -26,7 +26,9 @@ def list_requests():
 
 @router.post("/requests")
 def create_request(body: RequestCreate):
-    return workflow_service.create_request(body.request_type, patient_id=body.patient_id)
+    return workflow_service.create_request(
+        body.request_type, patient_id=body.patient_id, robot_id=body.robot_id
+    )
 
 
 @router.get("/requests/{request_id}")

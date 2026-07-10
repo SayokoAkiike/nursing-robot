@@ -37,8 +37,11 @@ def test_list_robots(api_client):
     domain_service.seed_default_domain_data()
     r = api_client.get("/robots")
     assert r.status_code == 200
-    ids = {robot["id"] for robot in r.json()}
+    robots = r.json()
+    ids = {robot["id"] for robot in robots}
     assert "ROBOT_1" in ids
+    # Item 5: /robots now also reports each robot's live IDLE/BUSY status.
+    assert all(robot["status"] == "IDLE" for robot in robots)
 
 
 def test_list_wards_nests_rooms_and_beds(api_client):
