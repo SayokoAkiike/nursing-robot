@@ -10,14 +10,21 @@ rows.
 from datetime import datetime, timedelta
 
 from backend.db.models import (
+    BedRow,
     CareRequestRow,
+    HospitalRow,
     KitVerificationRow,
     NurseEscalationRow,
+    NurseRow,
     PatientInteractionRow,
+    PatientRow,
     RobotEventRow,
+    RobotRow,
     RobotTaskRow,
+    RoomRow,
     RoundingSessionRow,
     TaskStateTransitionRow,
+    WardRow,
 )
 from backend.db.session import get_session, init_db
 
@@ -672,6 +679,228 @@ def escalate_nurse_escalation_priority(
         session.close()
 
 
+# ---- domain registry (item 4: Hospital/Ward/Room/Bed/Patient/Nurse/Robot) --
+# Purely additive tables (see models.py's module comment above them) -- each
+# gets the same plain insert/get/list shape as everything else in this file.
+
+HOSPITAL_FIELDS = ["id", "name"]
+WARD_FIELDS = ["id", "hospital_id", "name"]
+ROOM_FIELDS = ["id", "ward_id", "number"]
+BED_FIELDS = ["id", "room_id", "label"]
+PATIENT_FIELDS = ["id", "display_name", "bed_id", "allowed_kits"]
+NURSE_FIELDS = ["id", "name", "ward_id"]
+ROBOT_FIELDS = ["id", "name", "hospital_id"]
+
+
+def insert_hospital(row: dict) -> None:
+    init_db()
+    session = get_session()
+    try:
+        session.add(HospitalRow(**row))
+        session.commit()
+    finally:
+        session.close()
+
+
+def get_hospital(hospital_id: str) -> dict | None:
+    init_db()
+    session = get_session()
+    try:
+        row = session.get(HospitalRow, hospital_id)
+        return _as_dict(row, HOSPITAL_FIELDS) if row else None
+    finally:
+        session.close()
+
+
+def list_hospitals() -> list:
+    init_db()
+    session = get_session()
+    try:
+        return [_as_dict(r, HOSPITAL_FIELDS) for r in session.query(HospitalRow).all()]
+    finally:
+        session.close()
+
+
+def insert_ward(row: dict) -> None:
+    init_db()
+    session = get_session()
+    try:
+        session.add(WardRow(**row))
+        session.commit()
+    finally:
+        session.close()
+
+
+def get_ward(ward_id: str) -> dict | None:
+    init_db()
+    session = get_session()
+    try:
+        row = session.get(WardRow, ward_id)
+        return _as_dict(row, WARD_FIELDS) if row else None
+    finally:
+        session.close()
+
+
+def list_wards() -> list:
+    init_db()
+    session = get_session()
+    try:
+        return [_as_dict(r, WARD_FIELDS) for r in session.query(WardRow).all()]
+    finally:
+        session.close()
+
+
+def insert_room(row: dict) -> None:
+    init_db()
+    session = get_session()
+    try:
+        session.add(RoomRow(**row))
+        session.commit()
+    finally:
+        session.close()
+
+
+def get_room(room_id: str) -> dict | None:
+    init_db()
+    session = get_session()
+    try:
+        row = session.get(RoomRow, room_id)
+        return _as_dict(row, ROOM_FIELDS) if row else None
+    finally:
+        session.close()
+
+
+def list_rooms(ward_id: str | None = None) -> list:
+    init_db()
+    session = get_session()
+    try:
+        query = session.query(RoomRow)
+        if ward_id is not None:
+            query = query.filter(RoomRow.ward_id == ward_id)
+        return [_as_dict(r, ROOM_FIELDS) for r in query.all()]
+    finally:
+        session.close()
+
+
+def insert_bed(row: dict) -> None:
+    init_db()
+    session = get_session()
+    try:
+        session.add(BedRow(**row))
+        session.commit()
+    finally:
+        session.close()
+
+
+def get_bed(bed_id: str) -> dict | None:
+    init_db()
+    session = get_session()
+    try:
+        row = session.get(BedRow, bed_id)
+        return _as_dict(row, BED_FIELDS) if row else None
+    finally:
+        session.close()
+
+
+def list_beds(room_id: str | None = None) -> list:
+    init_db()
+    session = get_session()
+    try:
+        query = session.query(BedRow)
+        if room_id is not None:
+            query = query.filter(BedRow.room_id == room_id)
+        return [_as_dict(r, BED_FIELDS) for r in query.all()]
+    finally:
+        session.close()
+
+
+def insert_patient(row: dict) -> None:
+    init_db()
+    session = get_session()
+    try:
+        session.add(PatientRow(**row))
+        session.commit()
+    finally:
+        session.close()
+
+
+def get_patient(patient_id: str) -> dict | None:
+    init_db()
+    session = get_session()
+    try:
+        row = session.get(PatientRow, patient_id)
+        return _as_dict(row, PATIENT_FIELDS) if row else None
+    finally:
+        session.close()
+
+
+def list_patients() -> list:
+    init_db()
+    session = get_session()
+    try:
+        return [_as_dict(r, PATIENT_FIELDS) for r in session.query(PatientRow).all()]
+    finally:
+        session.close()
+
+
+def insert_nurse(row: dict) -> None:
+    init_db()
+    session = get_session()
+    try:
+        session.add(NurseRow(**row))
+        session.commit()
+    finally:
+        session.close()
+
+
+def get_nurse(nurse_id: str) -> dict | None:
+    init_db()
+    session = get_session()
+    try:
+        row = session.get(NurseRow, nurse_id)
+        return _as_dict(row, NURSE_FIELDS) if row else None
+    finally:
+        session.close()
+
+
+def list_nurses() -> list:
+    init_db()
+    session = get_session()
+    try:
+        return [_as_dict(r, NURSE_FIELDS) for r in session.query(NurseRow).all()]
+    finally:
+        session.close()
+
+
+def insert_robot(row: dict) -> None:
+    init_db()
+    session = get_session()
+    try:
+        session.add(RobotRow(**row))
+        session.commit()
+    finally:
+        session.close()
+
+
+def get_robot(robot_id: str) -> dict | None:
+    init_db()
+    session = get_session()
+    try:
+        row = session.get(RobotRow, robot_id)
+        return _as_dict(row, ROBOT_FIELDS) if row else None
+    finally:
+        session.close()
+
+
+def list_robots() -> list:
+    init_db()
+    session = get_session()
+    try:
+        return [_as_dict(r, ROBOT_FIELDS) for r in session.query(RobotRow).all()]
+    finally:
+        session.close()
+
+
 def delete_all_data() -> None:
     """Wipe every row from every table. Full reset, not a selective one --
     there's no column marking which rows are "seeded" vs real, so this is
@@ -691,6 +920,15 @@ def delete_all_data() -> None:
         session.query(RobotTaskRow).delete()
         session.query(CareRequestRow).delete()
         session.query(RoundingSessionRow).delete()
+        # Domain registry (item 4): child-to-parent order, same reasoning as
+        # above -- patients/nurses/robots reference beds/wards/hospitals.
+        session.query(PatientRow).delete()
+        session.query(NurseRow).delete()
+        session.query(RobotRow).delete()
+        session.query(BedRow).delete()
+        session.query(RoomRow).delete()
+        session.query(WardRow).delete()
+        session.query(HospitalRow).delete()
         session.commit()
     finally:
         session.close()
