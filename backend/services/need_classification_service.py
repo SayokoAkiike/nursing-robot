@@ -18,6 +18,17 @@ from dataclasses import dataclass
 # win a tie.
 _RULES: list[tuple[str, str, tuple[str, ...]]] = [
     ("pain", "URGENT", ("痛い", "胸が痛い", "苦しい")),
+    # fall_risk sits right after pain and ahead of toileting on purpose:
+    # this whole product exists to prevent a patient standing up alone
+    # before a nurse arrives (see README's "解決する問題"), so a response
+    # indicating the patient is already unsteady, already up, or has
+    # already fallen is exactly the scenario the rounding conversation is
+    # meant to catch -- it should outrank a routine "トイレに行きたい"
+    # even though both currently would also trip PATIENTS' toileting risk
+    # flag on the delivery side. Kept below "pain" only because a chest
+    # pain report can be the more acute of the two if both are ever
+    # mentioned together.
+    ("fall_risk", "URGENT", ("ふらふら", "めまい", "転びそう", "転んで", "転倒", "一人で立ち上が")),
     ("toileting", "HIGH", ("トイレ", "お手洗い", "立ちたい")),
     ("nurse_check", "HIGH", ("看護師", "来てほしい")),
     ("water", "MEDIUM", ("水", "飲みたい")),
@@ -36,6 +47,7 @@ _RULES: list[tuple[str, str, tuple[str, ...]]] = [
 # different route).
 _ROUTES: dict[str, str] = {
     "pain": "URGENT_ESCALATION",
+    "fall_risk": "URGENT_ESCALATION",
     "toileting": "NURSE_NOTIFICATION",
     "nurse_check": "NURSE_NOTIFICATION",
     "water": "NURSE_NOTIFICATION",
@@ -52,6 +64,7 @@ _ROUTES: dict[str, str] = {
 # rules that produce `detected_need`, rather than in rounding_service.
 NEED_LABELS: dict[str, str] = {
     "pain": "強い痛み・苦しさ",
+    "fall_risk": "転倒の危険（ふらつき・一人での立ち上がり）",
     "toileting": "トイレ介助",
     "nurse_check": "看護師の訪室",
     "water": "飲水介助",
@@ -64,6 +77,7 @@ NEED_LABELS: dict[str, str] = {
 
 SUGGESTED_ACTIONS: dict[str, str] = {
     "pain": "至急、看護師が訪室して状態を確認してください。",
+    "fall_risk": "至急、看護師が訪室し、患者の安全を直接確認してください。転倒・転落の恐れがあります。",
     "toileting": "看護師が訪室して介助してください。",
     "nurse_check": "看護師が訪室してください。",
     "water": "看護師または巡回ロボットが飲水を届けてください。",

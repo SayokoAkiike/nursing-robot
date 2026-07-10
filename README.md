@@ -425,7 +425,7 @@ python -m backend.scripts.run_simulated_delivery --nurse-token $NURSE_TOKEN --au
 
 ### 巡回・見守りワークフロー一括駆動（`backend/scripts/run_simulated_rounding.py`、Phase 4.5）
 
-実際の人物検出・音声認識は行わず（Phase 4.5の設計方針どおり）、6つの名前付きシナリオ（`rounding_normal` / `rounding_patient_detected` / `rounding_toileting_escalation` / `rounding_water_request` / `rounding_no_need` / `rounding_urgent_pain`）それぞれに紐づく疑似患者応答を、本物のAPI（`/rounding/*`、`/escalations/*`）越しに一気通貫で流す開発・デモ用スクリプト。分類結果（`detected_need`/`escalation_level`）を期待値と照合するので、単なるデモではなく`need_classification_service`のルールセットに対するE2Eスモークテストも兼ねる。
+実際の人物検出・音声認識は行わず（Phase 4.5の設計方針どおり）、7つの名前付きシナリオ（`rounding_normal` / `rounding_patient_detected` / `rounding_toileting_escalation` / `rounding_water_request` / `rounding_no_need` / `rounding_urgent_pain` / `rounding_fall_risk`）それぞれに紐づく疑似患者応答を、本物のAPI（`/rounding/*`、`/escalations/*`）越しに一気通貫で流す開発・デモ用スクリプト。分類結果（`detected_need`/`escalation_level`）を期待値と照合するので、単なるデモではなく`need_classification_service`のルールセットに対するE2Eスモークテストも兼ねる。`rounding_fall_risk`は本製品が最も防ぎたい状況（患者が看護師を待たず一人でふらついて立ち上がってしまう）を再現するシナリオで、`fall_risk`はpainと同じURGENT/URGENT_ESCALATIONだが、通常のトイレ希望（toileting/HIGH）より優先されるようルール順で明示的に上位に置かれている。
 
 ```bash
 python -m backend.scripts.run_simulated_rounding --scenario rounding_toileting_escalation --nurse-token $NURSE_TOKEN

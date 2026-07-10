@@ -86,6 +86,24 @@ def test_pain_keyword_wins_over_toileting_when_both_present():
     assert result.escalation_level == "URGENT"
 
 
+def test_fall_risk_is_urgent():
+    result = ncs.classify("ふらふらして、一人で立ち上がってしまいました")
+    assert result.detected_need == "fall_risk"
+    assert result.escalation_level == "URGENT"
+    assert result.route == "URGENT_ESCALATION"
+
+
+def test_fall_risk_keyword_wins_over_toileting_when_both_present():
+    # Rule order matters here too: fall_risk sits ahead of toileting (see
+    # need_classification_service._RULES's comment) because a patient who
+    # is already unsteady/up on their own is the exact scenario this
+    # product exists to catch, even if they also mention wanting the
+    # toilet in the same breath.
+    result = ncs.classify("ふらふらしますが、トイレに行きたいです")
+    assert result.detected_need == "fall_risk"
+    assert result.escalation_level == "URGENT"
+
+
 def test_need_label_and_suggested_action_have_entries_for_every_rule_need():
     for need, _level, _keywords in ncs._RULES:
         assert ncs.need_label(need)

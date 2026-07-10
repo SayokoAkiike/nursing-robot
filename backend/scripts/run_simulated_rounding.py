@@ -88,6 +88,13 @@ SCENARIOS: dict[str, dict] = {
         "expected_need": "pain",
         "expected_priority": "URGENT",
     },
+    "rounding_fall_risk": {
+        "room": DEFAULT_ROOM,
+        "patient_id": DEFAULT_PATIENT_ID,
+        "simulated_response": "ふらふらして、一人で立ち上がってしまいました",
+        "expected_need": "fall_risk",
+        "expected_priority": "URGENT",
+    },
 }
 
 DEFAULT_SCENARIO = "rounding_toileting_escalation"
