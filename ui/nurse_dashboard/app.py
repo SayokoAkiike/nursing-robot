@@ -69,6 +69,9 @@ else:
             st.markdown(f"{esc.get('summary', '')}")
             if esc.get("suggested_action"):
                 st.caption(f"Suggested action: {esc['suggested_action']}")
+            escalated_count = esc.get("escalated_count") or 0
+            if escalated_count:
+                st.caption(f"⚠️ 未確認のため優先度を自動引き上げ済み（{escalated_count}回）")
             if status == "PENDING":
                 if st.button(
                     LABELS["ack_button"], key=f"ack_{esc_id}", use_container_width=False

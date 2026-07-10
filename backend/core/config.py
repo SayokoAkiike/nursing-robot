@@ -77,3 +77,27 @@ KIT_NAMES = {
 
 DEFAULT_PATIENT_ID = "PATIENT_A_ROOM_203"
 
+# How long a PENDING nurse_escalations row may sit unacknowledged before
+# escalation_service.check_and_escalate_overdue() bumps its priority one
+# step (see ESCALATION_PRIORITY_ESCALATION_PATH below). Values are seconds;
+# short enough to demo without a real wait, long enough that a nurse
+# glancing at the dashboard every few refreshes isn't fighting the clock.
+# Tune freely -- nothing else in the codebase assumes these exact numbers.
+ESCALATION_TIMEOUT_SECONDS = {
+    "URGENT": 120,
+    "HIGH": 300,
+    "MEDIUM": 600,
+    "LOW": 1800,
+}
+
+# The one-step-up path a priority takes when it times out. URGENT maps to
+# itself -- there is nowhere higher to go, so
+# check_and_escalate_overdue() treats "next == current" as "already at the
+# top" and leaves it alone rather than looping.
+ESCALATION_PRIORITY_ESCALATION_PATH = {
+    "LOW": "MEDIUM",
+    "MEDIUM": "HIGH",
+    "HIGH": "URGENT",
+    "URGENT": "URGENT",
+}
+

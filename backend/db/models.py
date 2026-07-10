@@ -64,6 +64,21 @@ rows; the `ROUNDING_ALLOWED_TRANSITIONS` state machine and
 `rounding_service` module built on top of these tables are introduced in
 PR23, kept deliberately separate from `ALLOWED_TRANSITIONS` /
 `robot_tasks` (see `backend/services/robot_service.py` for why).
+
+Escalation safety-net revision: `nurse_escalations.rounding_session_id`
+switches from NOT NULL to nullable, and three columns are added
+(`escalated_count`, `last_escalated_at`, `source`). This closes two gaps:
+(1) a delivery-flow ERROR (QR mismatch, an attempted KIT_RELEASED without
+nurse confirmation, an emergency stop) previously had no way to reach the
+nurse_escalations queue at all, since every existing writer of that table
+was rounding_service and always had a session to attach to --
+`workflow_service._raise_error_escalation()` is the first writer that
+doesn't; (2) a PENDING escalation could sit unacknowledged indefinitely
+with no visible urgency change -- `escalation_service.
+check_and_escalate_overdue()` now bumps priority one step after
+`backend.core.config.ESCALATION_TIMEOUT_SECONDS` elapses, recording the
+bump in these two new columns rather than silently mutating `priority`
+with no trace.
 """
 from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import declarative_base
@@ -260,6 +275,24 @@ class NurseEscalationRow(Base):
     notification (route == NURSE_NOTIFICATION, no delivery involved) with
     no corresponding `care_requests` row, or it can be raised alongside one
     (route == DELIVERY_REQUIRED plus a same-visit notification).
+
+    `rounding_session_id` was originally NOT NULL (every escalation came
+    from a rounding session). It is now nullable: `workflow_service`'s
+    delivery flow raises an escalation directly on a safety-relevant
+    ERROR (QR mismatch, an attempted KIT_RELEASED without nurse
+    confirmation, emergency stop) without ever having a rounding session
+    to attach to -- see `workflow_service._raise_error_escalation()`.
+    `source` (nullable, "rounding" | "delivery_error") is how callers/UI
+    tell the two origins apart without a schema change every time a third
+    origin shows up.
+
+    `escalated_count` / `last_escalated_at` back
+    `escalation_service.check_and_escalate_overdue()`: a PENDING
+    escalation left unacknowledged past its priority's timeout
+    (`backend.core.config.ESCALATION_TIMEOUT_SECONDS`) has its priority
+    bumped one step and these two fields updated, so the nurse dashboard
+    can show "this was auto-escalated" instead of silently changing
+    priority with no trace.
     """
 
     __tablename__ = "nurse_escalations"
@@ -270,7 +303,7 @@ class NurseEscalationRow(Base):
 
     id = Column(String, primary_key=True)
     rounding_session_id = Column(
-        String, ForeignKey("rounding_sessions.id"), nullable=False
+        String, ForeignKey("rounding_sessions.id"), nullable=True
     )
     request_id = Column(String, ForeignKey("care_requests.id"), nullable=True)
     patient_id = Column(String, nullable=True)
@@ -283,3 +316,6 @@ class NurseEscalationRow(Base):
     created_at = Column(DateTime, nullable=True)
     acknowledged_at = Column(DateTime, nullable=True)
     acknowledged_by = Column(String, nullable=True)
+    escalated_count = Column(Integer, nullable=False, default=0)
+    last_escalated_at = Column(DateTime, nullable=True)
+    source = Column(String, nullable=True)

@@ -49,6 +49,15 @@ NURSE_ESCALATION_ROW = {
     "created_at": datetime(2026, 7, 9, 9, 2, 0),
     "acknowledged_at": None,
     "acknowledged_by": None,
+    # Added alongside the escalation-timeout safety net: escalated_count
+    # defaults to 0 at the ORM level (NurseEscalationRow.escalated_count's
+    # Column default) even though it isn't set explicitly here, but this
+    # fixture spells it out (plus the two nullable additions) so this
+    # test's exact-equality assertion keeps documenting the full row
+    # shape rather than silently passing thanks to an ORM default.
+    "escalated_count": 0,
+    "last_escalated_at": None,
+    "source": "rounding",
 }
 
 

@@ -460,6 +460,9 @@ NURSE_ESCALATION_FIELDS = [
     "created_at",
     "acknowledged_at",
     "acknowledged_by",
+    "escalated_count",
+    "last_escalated_at",
+    "source",
 ]
 
 
@@ -642,6 +645,28 @@ def acknowledge_nurse_escalation(
             row.status = "ACKNOWLEDGED"
             row.acknowledged_by = acknowledged_by
             row.acknowledged_at = acknowledged_at
+            session.commit()
+    finally:
+        session.close()
+
+
+def escalate_nurse_escalation_priority(
+    escalation_id: str, new_priority: str, escalated_at: "datetime"
+) -> None:
+    """Bump one PENDING escalation's priority and record the bump.
+
+    Used only by `escalation_service.check_and_escalate_overdue()` --
+    never touches `status`/`acknowledged_*`, only `priority` plus the two
+    trail columns, so a nurse can tell "this got louder while I wasn't
+    looking" apart from "this was always URGENT"."""
+    init_db()
+    session = get_session()
+    try:
+        row = session.get(NurseEscalationRow, escalation_id)
+        if row is not None:
+            row.priority = new_priority
+            row.escalated_count = (row.escalated_count or 0) + 1
+            row.last_escalated_at = escalated_at
             session.commit()
     finally:
         session.close()

@@ -284,6 +284,12 @@ def escalate(
             "created_at": now,
             "acknowledged_at": None,
             "acknowledged_by": None,
+            # Distinguishes this from workflow_service's
+            # _raise_error_escalation() rows in /analytics/
+            # escalation-breakdown and the nurse dashboard, now that
+            # rounding_session_id alone (nullable) can't be used to tell
+            # the two origins apart at a glance.
+            "source": "rounding",
         }
     )
     _advance(session_id, "ESCALATING_TO_NURSE", "WAITING_FOR_NURSE_ACK")
