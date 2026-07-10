@@ -99,7 +99,8 @@ flowchart TB
 | 品質管理（ruff / mypy / pytest-cov / CI） | `ruff.toml`, `mypy.ini`, `.coveragerc`, `.github/workflows/pytest.yml` | ✅ |
 | ドメイン登録テーブル（Hospital/Ward/Room/Bed/Patient/Nurse/Robot、読み取り専用API、シードスクリプト） | `backend/db/models.py`, `backend/services/domain_service.py`, `backend/api/routes_domain.py`, `backend/scripts/seed_domain_data.py` | ✅ |
 | マルチロボット対応（配送ワークフローの`robot_id`パラメータ化、ロボット単位のIDLE/BUSYステータス、巡回セッションの担当ロボットへの配送引き継ぎ） | `backend/services/workflow_service.py`, `backend/services/rounding_service.py`, `backend/services/domain_service.py`, `backend/api/routes_requests.py`, `backend/api/routes_domain.py` | ✅ |
-| pytest テスト（293件） | `tests/` （API/workflow service/state machine/repositories/verification/perception/vision/analytics/Docker設定/PyBulletシミュレーション/Grafana設定/GUIデモ/巡回ワークフロー/ドメイン登録/マルチロボット） | ✅ |
+| UIのリアルタイム更新（`st.experimental_fragment(run_every=...)`による部分自動更新、ブロッキングsleepポーリングの撤去） | `ui/patient_request_app/app.py`, `ui/nurse_dashboard/app.py` | ✅ |
+| pytest テスト（300件） | `tests/` （API/workflow service/state machine/repositories/verification/perception/vision/analytics/Docker設定/PyBulletシミュレーション/Grafana設定/GUIデモ/巡回ワークフロー/ドメイン登録/マルチロボット/UIリアルタイム更新） | ✅ |
 
 ## ❌ 未実装（今後の予定）
 
@@ -292,6 +293,14 @@ erDiagram
 - `POST /requests`（`RequestCreate`スキーマ）が`robot_id`を任意項目として受け付ける（`RoundingStart.robot_id`と同じパターン）。
 - `rounding_service.require_delivery()`が、巡回セッション自身の`robot_id`（`start_rounding()`で指定されたロボット）を配送タスクへそのまま引き継ぐようになった。これまでは巡回ロボットが`ROBOT_2`であっても、配送タスクは常に`DEFAULT_ROBOT_ID`（`ROBOT_1`）へ暗黙に割り当てられていた。
 - `domain_service.list_robots_view()`が、登録済みの各ロボットに`repositories.get_active_task_for_robot()`由来のライブな`status`（`IDLE`/`BUSY`）を付与して返す。`GET /robots`のレスポンスに反映され、`domain_service.pick_available_robot_id()`（空いているロボットのidを1台返す、全て稼働中なら`None`）の土台にもなっている。
+
+### UIのリアルタイム更新
+
+患者用タブレットUI・看護師ダッシュボードは、どちらも従来`time.sleep(3); st.rerun()`でスクリプト全体をブロックしてから丸ごと再実行・再描画する自前ポーリングだった（患者UIは待機中/エスカレーション中は常時、看護師ダッシュボードは「Auto-refresh」チェックボックスON時のみ）。これを`st.experimental_fragment(run_every=2)`（安定版`st.fragment`に相当する、streamlit 1.35.0時点でのAPI名）に置き換え、各セクション（看護師ダッシュボードのEscalations/タスク一覧/ログ、患者UIの画面全体）がそれぞれ独立したタイマーで自動的に部分再描画されるようにした。ポイントは以下の3点。
+
+- 看護師ダッシュボードの自動更新は常時ON（チェックボックス不要）になり、他のセクションを巻き込まずにEscalations・タスク一覧・ログがそれぞれ独立して更新される。
+- 患者UIは「選択画面」「待機画面」「完了/エラー画面」の3状態すべてを1つのフラグメントが毎回組み立て直すため、ボタン操作以外の理由（看護師によるリセット、巡回からのエスカレーション）で状態が変わった場合でも自動的に追従する。
+- 新規の外部依存は追加していない（`streamlit==1.35.0`に元々含まれる機能）。ロードマップの当初の呼称は「WebSocket化」だったが、生のWebSocketクライアントをStreamlitのスクリプト再実行モデルへ手動で統合するのはバックグラウンドスレッドの管理などで壊れやすく、`st.experimental_fragment`の部分自動更新の方が保守性が高いと判断した。体感としては「短間隔ポーリング」のままであり、サーバー側からの即時プッシュ通知ではない点は変わらない。
 
 ---
 
@@ -515,6 +524,7 @@ PyBulletのGUIウィンドウが開き、ドック位置からベッドサイド
 - 物理制御・ナビゲーションは未実装（PyBulletシーン内でも位置を直接設定しているのみ）
 - Dockerイメージはローカル/デモ用のcomposeスタック向けで、本番デプロイ向けの構成（secrets管理、`alembic upgrade head`の明示実行など）は別途必要
 - 巡回ワークフローは実音声認識・実人物検出を行わず、シミュレーション/疑似入力とルールベース分類のみ（LLMは使用していない）
+- UIの自動更新は`st.experimental_fragment(run_every=2)`による短間隔（2秒）ポーリングであり、バックエンドからのイベントプッシュ（真のWebSocket/SSE）ではない
 - 本プロトタイプは医療機器ではありません
 
 ---

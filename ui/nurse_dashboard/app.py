@@ -1,5 +1,4 @@
 import streamlit as st
-import time
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +15,23 @@ st.markdown(CSS, unsafe_allow_html=True)
 
 RISK_COLOR = {"転倒リスクあり": "High", "要確認": "Check", "なし": "Low"}
 
+# Item 6 (realtime UI upgrade): every section below used to only refresh via
+# a manual "Auto-refresh every 3 seconds" checkbox that, when on, blocked the
+# *entire* script for 3s (time.sleep) and then re-ran and re-rendered the
+# whole page (st.rerun()) -- escalations, tasks, and the log together, even
+# if only one of them had actually changed. `st.experimental_fragment`
+# (stable `st.fragment` doesn't exist yet on the pinned streamlit==1.35.0;
+# this is the pre-1.37 name for the same feature) lets each section
+# independently re-run and redraw on its own timer without blocking or
+# re-rendering the other two, and without a manual opt-in checkbox. This is
+# a genuine reduction in staleness (always-on vs. opt-in) and in per-refresh
+# cost (one section's dataframe re-render doesn't force the others to
+# re-render too), while staying inside vanilla Streamlit (no new
+# dependencies, no custom WebSocket client thread fighting Streamlit's
+# script-rerun model).
+REFRESH_INTERVAL_SECONDS = 2
+
+
 def call_api(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
@@ -23,11 +39,13 @@ def call_api(fn, *args, **kwargs):
         st.error(f"API error: {e}")
         return None
 
+
 col_h1, col_h2 = st.columns([3, 1])
 with col_h1:
     st.markdown("## PreCare Console")
 with col_h2:
     st.caption(datetime.now().strftime("%H:%M:%S"))
+
 
 # ---------------------------------------------------------------------------
 # PR26: Escalations section -- the queue of things a nurse needs to see/ack,
@@ -37,16 +55,19 @@ with col_h2:
 # 「看護師が見るべき通知キュー」として表示したい"), and placed above it so a
 # HIGH/URGENT notification isn't buried under in-progress deliveries.
 # ---------------------------------------------------------------------------
-st.markdown(f"### {LABELS['escalations_title']}")
-try:
-    escalations = api_client.get_escalations()
-except Exception as e:
-    st.error(f"Backend not reachable: {e}")
-    escalations = []
+@st.experimental_fragment(run_every=REFRESH_INTERVAL_SECONDS)
+def render_escalations():
+    st.markdown(f"### {LABELS['escalations_title']}")
+    try:
+        escalations = api_client.get_escalations()
+    except Exception as e:
+        st.error(f"Backend not reachable: {e}")
+        return
 
-if not escalations:
-    st.caption(LABELS["escalations_empty"])
-else:
+    if not escalations:
+        st.caption(LABELS["escalations_empty"])
+        return
+
     for esc in escalations:
         priority = esc.get("priority", "LOW")
         color = PRIORITY_COLOR.get(priority, PRIORITY_COLOR["LOW"])
@@ -78,18 +99,20 @@ else:
                 ):
                     if call_api(api_client.acknowledge_escalation, esc_id, "nurse_dashboard"):
                         st.rerun()
-st.divider()
 
 
-try:
-    tasks = api_client.get_requests()
-except Exception as e:
-    st.error(f"Backend not reachable: {e}")
-    st.stop()
+@st.experimental_fragment(run_every=REFRESH_INTERVAL_SECONDS)
+def render_tasks():
+    try:
+        tasks = api_client.get_requests()
+    except Exception as e:
+        st.error(f"Backend not reachable: {e}")
+        return
 
-if not tasks:
-    st.markdown("<p style='color:#888;padding:2rem 0'>Waiting for patient request.</p>", unsafe_allow_html=True)
-else:
+    if not tasks:
+        st.markdown("<p style='color:#888;padding:2rem 0'>Waiting for patient request.</p>", unsafe_allow_html=True)
+        return
+
     for task in tasks:
         rs = task.get("robot_state", "IDLE")
         request_id = task.get("request_id", "-")
@@ -153,18 +176,22 @@ else:
                 st.error("Error detected. Confirm and reset.")
         st.divider()
 
-st.markdown("#### Log")
-try:
-    logs = api_client.get_logs()
-except Exception:
-    logs = []
-if logs:
-    import pandas as pd
-    st.dataframe(pd.DataFrame(logs[::-1]), use_container_width=True, height=200)
-else:
-    st.caption("No logs yet.")
+
+@st.experimental_fragment(run_every=REFRESH_INTERVAL_SECONDS)
+def render_log():
+    st.markdown("#### Log")
+    try:
+        logs = api_client.get_logs()
+    except Exception:
+        logs = []
+    if logs:
+        import pandas as pd
+        st.dataframe(pd.DataFrame(logs[::-1]), use_container_width=True, height=200)
+    else:
+        st.caption("No logs yet.")
+
+
+render_escalations()
 st.divider()
-auto = st.checkbox("Auto-refresh every 3 seconds")
-if auto:
-    time.sleep(3)
-    st.rerun()
+render_tasks()
+render_log()
