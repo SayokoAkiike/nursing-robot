@@ -97,6 +97,33 @@ class Classification:
     confidence: str
 
 
+# PR31: need -> escalation_level, derived from _RULES so there is exactly
+# one place (the _RULES list above) that decides a need's severity --
+# semantic_classification_service.py (a *different* way of arriving at a
+# `detected_need`, from embedding similarity instead of keyword match)
+# pulls the level/route for whatever need it lands on from here rather
+# than hard-coding a second copy of "toileting is HIGH" etc.
+_LEVELS: dict[str, str] = {need: level for need, level, _keywords in _RULES}
+_LEVELS["information_only"] = "LOW"
+_LEVELS["unknown"] = "LOW"
+
+
+def escalation_level_for(detected_need: str) -> str:
+    return _LEVELS.get(detected_need, "LOW")
+
+
+def route_for(detected_need: str) -> str:
+    return _ROUTES.get(detected_need, _ROUTES["unknown"])
+
+
+def known_needs() -> list[str]:
+    """Every detected_need this module's rules can produce (excludes
+    "unknown", which is the fallback for anything that doesn't match).
+    Used by semantic_classification_service.py to know which categories
+    it should have example utterances for."""
+    return [need for need, _level, _keywords in _RULES]
+
+
 def classify(patient_response: str) -> Classification:
     """Classify one patient response. Never raises -- an empty string or a
     response matching no rule falls through to ("unknown", "LOW",
