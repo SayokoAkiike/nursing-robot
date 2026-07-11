@@ -100,7 +100,10 @@ flowchart TB
 | ドメイン登録テーブル（Hospital/Ward/Room/Bed/Patient/Nurse/Robot、読み取り専用API、シードスクリプト） | `backend/db/models.py`, `backend/services/domain_service.py`, `backend/api/routes_domain.py`, `backend/scripts/seed_domain_data.py` | ✅ |
 | マルチロボット対応（配送ワークフローの`robot_id`パラメータ化、ロボット単位のIDLE/BUSYステータス、巡回セッションの担当ロボットへの配送引き継ぎ） | `backend/services/workflow_service.py`, `backend/services/rounding_service.py`, `backend/services/domain_service.py`, `backend/api/routes_requests.py`, `backend/api/routes_domain.py` | ✅ |
 | UIのリアルタイム更新（`st.experimental_fragment(run_every=...)`による部分自動更新、ブロッキングsleepポーリングの撤去） | `ui/patient_request_app/app.py`, `ui/nurse_dashboard/app.py` | ✅ |
-| pytest テスト（300件） | `tests/` （API/workflow service/state machine/repositories/verification/perception/vision/analytics/Docker設定/PyBulletシミュレーション/Grafana設定/GUIデモ/巡回ワークフロー/ドメイン登録/マルチロボット/UIリアルタイム更新） | ✅ |
+| 実音声認識（faster-whisper、オフライン・ローカル完結、`--audio-file`でWAVファイルを文字起こしして巡回フローに接続） | `perception/speech_source.py`, `perception/speech_recognizer.py`, `backend/scripts/run_simulated_rounding.py` | ✅ |
+| 実姿勢推定・離床検知（MediaPipe Pose、ベッド領域外への離床を連続フレームで確認してから看護師へ直接エスカレーション） | `perception/pose_detector.py`, `backend/services/bed_exit_service.py`, `backend/scripts/run_pose_demo.py`, `backend/scripts/download_pose_model.py` | ✅ |
+| セッション不要の直接エスカレーション（配送エラー・映像検知など、巡回セッションを介さない安全通知の共通経路） | `backend/services/escalation_service.py` (`raise_direct_escalation`) | ✅ |
+| pytest テスト（337件） | `tests/` （API/workflow service/state machine/repositories/verification/perception/vision/analytics/Docker設定/PyBulletシミュレーション/Grafana設定/GUIデモ/巡回ワークフロー/ドメイン登録/マルチロボット/UIリアルタイム更新/音声認識/姿勢推定） | ✅ |
 
 ## ❌ 未実装（今後の予定）
 
@@ -456,7 +459,7 @@ python -m backend.scripts.run_simulated_delivery --nurse-token $NURSE_TOKEN --au
 
 ### 巡回・見守りワークフロー一括駆動（`backend/scripts/run_simulated_rounding.py`、Phase 4.5）
 
-実際の人物検出・音声認識は行わず（Phase 4.5の設計方針どおり）、7つの名前付きシナリオ（`rounding_normal` / `rounding_patient_detected` / `rounding_toileting_escalation` / `rounding_water_request` / `rounding_no_need` / `rounding_urgent_pain` / `rounding_fall_risk`）それぞれに紐づく疑似患者応答を、本物のAPI（`/rounding/*`、`/escalations/*`）越しに一気通貫で流す開発・デモ用スクリプト。分類結果（`detected_need`/`escalation_level`）を期待値と照合するので、単なるデモではなく`need_classification_service`のルールセットに対するE2Eスモークテストも兼ねる。`rounding_fall_risk`は本製品が最も防ぎたい状況（患者が看護師を待たず一人でふらついて立ち上がってしまう）を再現するシナリオで、`fall_risk`はpainと同じURGENT/URGENT_ESCALATIONだが、通常のトイレ希望（toileting/HIGH）より優先されるようルール順で明示的に上位に置かれている。
+7つの名前付きシナリオ（`rounding_normal` / `rounding_patient_detected` / `rounding_toileting_escalation` / `rounding_water_request` / `rounding_no_need` / `rounding_urgent_pain` / `rounding_fall_risk`）それぞれに紐づく疑似患者応答を、本物のAPI（`/rounding/*`、`/escalations/*`）越しに一気通貫で流す開発・デモ用スクリプト。分類結果（`detected_need`/`escalation_level`）を期待値と照合するので、単なるデモではなく`need_classification_service`のルールセットに対するE2Eスモークテストも兼ねる。`rounding_fall_risk`は本製品が最も防ぎたい状況（患者が看護師を待たず一人でふらついて立ち上がってしまう）を再現するシナリオで、`fall_risk`はpainと同じURGENT/URGENT_ESCALATIONだが、通常のトイレ希望（toileting/HIGH）より優先されるようルール順で明示的に上位に置かれている。デフォルトでは疑似テキストのままだが、下記の`--audio-file`で実際の音声認識に置き換えられる。
 
 ```bash
 python -m backend.scripts.run_simulated_rounding --scenario rounding_toileting_escalation --nurse-token $NURSE_TOKEN
@@ -467,6 +470,51 @@ python -m backend.scripts.run_simulated_rounding --scenario rounding_toileting_e
 ```bash
 # 看護師確認を自動で行う場合（デモ・CI向け）
 python -m backend.scripts.run_simulated_rounding --scenario rounding_toileting_escalation --nurse-token $NURSE_TOKEN --auto-ack
+```
+
+### 実音声認識（`--audio-file`、faster-whisper、Phase 4.5）
+
+`run_simulated_rounding.py`に`--audio-file`を渡すと、シナリオの疑似応答テキストの代わりに、指定したWAVファイルを実際に音声認識（[faster-whisper](https://github.com/SYSTRAN/faster-whisper)、CPU/int8、完全オフライン）した結果を`/classify-need`に流す。クラウドAPIには一切送信しない（本番導入では患者の実音声を外部サービスに送るべきではないため、プロトタイプの段階からこの制約を守っている）。モデル重みは初回実行時にHugging Faceから自動ダウンロードされ、以降はローカルにキャッシュされる。
+
+```bash
+python -m backend.scripts.run_simulated_rounding \
+  --scenario rounding_toileting_escalation \
+  --nurse-token $NURSE_TOKEN \
+  --audio-file perception/audio_demo/toileting_ja.wav \
+  --auto-ack
+```
+
+`perception/audio_demo/toileting_ja.wav`は`espeak-ng`（オフラインのルールベースTTS）で合成した「トイレに行きたいです」で、実在の人物の声は含まれていない（詳細は`perception/audio_demo/README.md`）。機械音声のため聞き取り精度は完璧ではなく、うまく認識できなかった場合は`need_classification_service`が安全側（`detected_need=unknown` → `INFORMATION_ONLY`）に倒す。より自然な音声で試したい場合は、自分の声を録音したWAVファイルを指定するとよい。`--audio-file`使用時は`expected_need`/`expected_priority`との照合は行わない（実際の認識結果に精度保証がないため）。
+
+### 実姿勢推定・離床検知（`backend/scripts/run_pose_demo.py`、MediaPipe、Phase 4.5）
+
+[MediaPipe Pose Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker)で骨格を推定し、腰のランドマークが設定した「ベッド領域」の外に出たら離床（`fall_risk`）と判定する監視ループ。1フレームのノイズで誤発報しないよう、**`--confirm-frames`（既定5）フレーム連続**で離床判定されて初めて`POST /escalations/vision-report`で看護師へ直接エスカレーションする（巡回セッションを介さない、`source="vision_pose"`の通知）。映像・画像はどこにも保存せず、都度処理して破棄する。
+
+初回のみモデルファイルを手動ダウンロードする（faster-whisperと違い自動ダウンロードされない）。
+
+```bash
+python -m backend.scripts.download_pose_model
+```
+
+`--source`は`perception.run_perception`と同じ指定方法（`webcam:0` / 動画ファイル / 静止画ディレクトリ）。`--bed-region`は正規化座標（0.0〜1.0）の`x_min,y_min,x_max,y_max`で、カメラの設置位置に応じて調整する。
+
+```bash
+python -m backend.scripts.run_pose_demo \
+  --source webcam:0 \
+  --room 203 --patient-id PATIENT_A_ROOM_203 \
+  --bed-region 0.2,0.5,0.8,1.0 \
+  --base-url http://localhost:8000
+```
+
+Webカメラはローカルマシン限定（Codespacesにはカメラがない）。Codespaces上での動作確認は静止画ディレクトリで代用できる：
+
+```bash
+mkdir -p /tmp/test_frames
+python3 -c "
+import cv2, numpy as np
+cv2.imwrite('/tmp/test_frames/frame_001.png', np.zeros((480,640,3), dtype=np.uint8))
+"
+python -m backend.scripts.run_pose_demo --source /tmp/test_frames --room 203 --patient-id PATIENT_A_ROOM_203 --bed-region 0.2,0.5,0.8,1.0 --confirm-frames 1
 ```
 
 ### ローカルGUIデモ（`backend/scripts/run_gui_demo.py`、PR20）
@@ -510,6 +558,7 @@ PyBulletのGUIウィンドウが開き、ドック位置からベッドサイド
 | POST | `/rounding/{id}/require-delivery` | - | 配送フローへ接続（既存の配送ワークフローに合流） |
 | GET | `/escalations` | - | エスカレーション一覧（PENDING優先） |
 | GET | `/escalations/{id}` | - | エスカレーション詳細 |
+| POST | `/escalations/vision-report` | - | 映像検知（離床等）による直接エスカレーション |
 | POST | `/escalations/{id}/ack` | 🔒 | 看護師確認 |
 | GET | `/analytics/rounding-summary` | - | 巡回ワークフローの件数系集計 |
 | GET | `/analytics/escalation-breakdown` | - | エスカレーションのpriority/need/status別内訳 |
