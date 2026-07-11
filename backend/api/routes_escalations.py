@@ -8,7 +8,7 @@ anyone with API access can see.
 from fastapi import APIRouter, Depends
 
 from backend.core.security import require_nurse
-from backend.schemas.rounding import AckRequest
+from backend.schemas.rounding import AckRequest, VisionEscalationRequest
 from backend.services import escalation_service
 
 router = APIRouter(prefix="/escalations", tags=["escalations"])
@@ -28,6 +28,23 @@ def list_escalations(status: str | None = None):
 @router.get("/{escalation_id}")
 def get_escalation(escalation_id: str):
     return escalation_service.get_escalation(escalation_id)
+
+
+@router.post("/vision-report")
+def report_vision_escalation(body: VisionEscalationRequest):
+    """PR30: unauthenticated like /rounding/* -- this represents a
+    sensor/robot observation (a camera seeing a patient leave the bed
+    unsupervised), not a nurse action, same reasoning routes_rounding.py
+    documents for its own endpoints."""
+    return escalation_service.raise_direct_escalation(
+        room=body.room,
+        patient_id=body.patient_id,
+        summary=body.summary,
+        priority=body.priority,
+        reason=body.reason,
+        suggested_action=body.suggested_action,
+        source="vision_pose",
+    )
 
 
 @router.post("/{escalation_id}/ack", dependencies=[Depends(require_nurse)])

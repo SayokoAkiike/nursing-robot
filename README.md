@@ -108,7 +108,7 @@ flowchart TB
 |------|------|------------|
 | 実カメラでのリアルタイムQRスキャン | 合成動画/画像ディレクトリ/PyBulletシミュレーション入力では検証済み。実機Webカメラでの動作は未検証（`WebcamSource`自体はCodespacesのような画面なし環境では動かせない） | Phase 4 |
 | ロボットの物理制御・ナビゲーション | PyBulletシーン内では`resetBasePositionAndOrientation`で位置を直接設定しているのみで、ホイールや関節による本物の駆動制御はまだ無い | Phase 4 |
-| 巡回ワークフローの実音声認識・実人物検出・LLMベースの要望分類 | 現状はシミュレーション/疑似入力（`input_mode="simulated"`）とルールベース分類のみ。当初の設計方針として意図的にスコープ外としている | Phase 5以降 |
+| 巡回ワークフローの実音声認識・実人物検出・LLMベースの要望分類 | 実音声認識（faster-whisper、オフライン）・実姿勢推定/離床検知（MediaPipe）はPhase 4.5後半で実装済み。LLMベースの要望分類は未着手（ルールベースのまま） | Phase 5以降 |
 | マルチロボット・複数病棟対応 | 未着手 | Phase 5 |
 
 ## 🚀 Quick Start
@@ -125,6 +125,12 @@ pytest tests/ -v
 ```
 
 `DATABASE_URL`を`.env`で指定しない場合、`data/precare.db`のSQLiteファイルにフォールバックする（`pytest`やちょっとした動作確認に十分、追加セットアップ不要）。
+
+姿勢推定・離床検知（`run_pose_demo.py`）を使う場合、`pip install`だけでは足りずOSレベルの共有ライブラリが2つ追加で必要になることがある（Codespacesの標準イメージには入っていない）。`libGLESv2.so.2`/`libEGL.so.1`が見つからないというエラーが出たら：
+
+```bash
+sudo apt-get update && sudo apt-get install -y libgles2 libegl1
+```
 
 ### Docker実行（PR13、PostgreSQL + バックエンドAPI）
 
