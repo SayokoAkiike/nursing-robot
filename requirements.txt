@@ -95,3 +95,11 @@ sentence-transformers==5.6.0
 # on first actual use, same one-time-download pattern as PR29's
 # faster-whisper and PR31's sentence-transformers.
 llama-cpp-python==0.3.33
+
+# Unsupervised escalation anomaly detection (PR35/E) --
+# backend/services/escalation_anomaly_service.py. Already installed
+# transitively via sentence-transformers, but declared explicitly here
+# since this module imports it directly -- a dependency this codebase
+# relies on by name should be declared, not inherited by accident from
+# another package's requirements.
+scikit-learn==1.8.0

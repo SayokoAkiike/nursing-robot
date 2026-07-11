@@ -105,6 +105,7 @@ flowchart TB
 | セッション不要の直接エスカレーション（配送エラー・映像検知など、巡回セッションを介さない安全通知の共通経路） | `backend/services/escalation_service.py` (`raise_direct_escalation`) | ✅ |
 | 埋め込みベース要望分類フォールバック（キーワード未一致時、sentence-transformersによる言い換え吸収） | `backend/services/semantic_classification_service.py` | ✅ |
 | ローカルLLM要望分類フォールバック（キーワード・埋め込み双方が未一致の場合の最終段、llama-cpp-python + LFM2.5-1.2B-JP） | `backend/services/llm_classification_service.py` | ✅ |
+| エスカレーションパターンの教師なし異常検知（scikit-learn IsolationForest、患者ごとの統計的外れ値検知） | `backend/services/escalation_anomaly_service.py` | ✅ |
 | 離床検知の時系列判定（腰の速度・加速度を追跡し、静止位置判定を補完） | `backend/services/bed_exit_service.py` (`MotionTracker`) | ✅ |
 | pytest テスト（370件超） | `tests/` （API/workflow service/state machine/repositories/verification/perception/vision/analytics/Docker設定/PyBulletシミュレーション/Grafana設定/GUIデモ/巡回ワークフロー/ドメイン登録/マルチロボット/UIリアルタイム更新/音声認識/姿勢推定/埋め込み分類/ローカルLLM分類/時系列離床検知） | ✅ |
 
@@ -544,6 +545,16 @@ python -m backend.scripts.run_pose_demo --source /tmp/test_frames --room 203 --p
 
 `llama-cpp-python`は`torch`に依存しない軽量なバインディングだが、**PyPIにプリビルドwheelが無く、`pip install`のたびにC++バックエンド（llama.cpp本体）をソースからビルドする**。数分かかることがあるが、フリーズしているわけではない。GGUFモデル本体は初回の実際の分類実行時にHugging Faceから別途ダウンロードされる（`faster-whisper`・`sentence-transformers`と同じ、初回のみの自動ダウンロード方式）。
 
+### エスカレーションパターンの異常検知（`GET /analytics/escalation-anomalies`、Phase 4.5）
+
+当初「将来の転倒リスクを予測するスコアリング」として構想されていた機能だが、それには実際の転倒（アウトカム）の正解ラベルが必要で、合成デモデータしか無いこのプロトタイプでは原理的に作れない（合成データ生成に使ったルール自体をノイズ付きで再学習するだけになり、現実の予測精度は保証されない）。そのため、ラベル不要の**教師なし異常検知**として実装している：「この患者の直近のエスカレーションパターンは、他の患者と比べて統計的に外れているか」を`scikit-learn`の`IsolationForest`で判定する（患者ごとのエスカレーション件数・URGENT件数の割合・平均優先度・平均ack時間を特徴量として使用）。
+
+比較対象の患者数が少なすぎると統計的な意味を持たないため、**5人未満のデータしか無い場合は空の結果を返す**（無理に数値を出さない）。実運用でデータが蓄積されるほど、この異常検知は意味のある比較になっていく。
+
+```bash
+curl http://localhost:8000/analytics/escalation-anomalies
+```
+
 ### ローカルGUIデモ（`backend/scripts/run_gui_demo.py`、PR20）
 
 上記は全てヘッドレス（`p.DIRECT`、画面表示なし）で、CI/Codespacesでも動く。ロボットが実際に動く様子を画面で見たい場合は、ディスプレイのあるローカルマシン限定で以下を実行する（**Codespacesでは動かない**）。
@@ -589,6 +600,7 @@ PyBulletのGUIウィンドウが開き、ドック位置からベッドサイド
 | POST | `/escalations/{id}/ack` | 🔒 | 看護師確認 |
 | GET | `/analytics/rounding-summary` | - | 巡回ワークフローの件数系集計 |
 | GET | `/analytics/escalation-breakdown` | - | エスカレーションのpriority/need/status別内訳 |
+| GET | `/analytics/escalation-anomalies` | - | 患者ごとのエスカレーションパターンの教師なし異常検知 |
 | GET | `/patients` | - | 患者一覧（ドメイン登録テーブル、room_number/ward_name/allowed_kits付き） |
 | GET | `/patients/{id}` | - | 患者詳細 |
 | GET | `/robots` | - | ロボット一覧（各ロボットに`status`＝IDLE/BUSYを含む） |
