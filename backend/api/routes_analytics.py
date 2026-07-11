@@ -8,7 +8,7 @@ added here, it should get the same `require_nurse` dependency
 """
 from fastapi import APIRouter
 
-from backend.services import analytics_service
+from backend.services import analytics_service, escalation_anomaly_service
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -36,3 +36,12 @@ def get_rounding_summary():
 @router.get("/escalation-breakdown")
 def get_escalation_breakdown():
     return analytics_service.escalation_breakdown()
+
+
+@router.get("/escalation-anomalies")
+def get_escalation_anomalies():
+    """PR35 (E): unsupervised anomaly detection over each patient's
+    escalation pattern -- see escalation_anomaly_service.py's module
+    docstring for why this is framed as anomaly detection rather than a
+    predictive risk score."""
+    return escalation_anomaly_service.analyze()

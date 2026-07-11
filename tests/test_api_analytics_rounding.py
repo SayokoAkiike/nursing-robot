@@ -35,3 +35,12 @@ def test_rounding_summary_reflects_real_session(api_client):
     assert body["total_rounding_sessions"] == 1
     assert body["patients_detected"] == 1
     assert body["interactions_started"] == 0
+
+
+def test_escalation_anomalies_endpoint_on_empty_db(api_client):
+    r = api_client.get("/analytics/escalation-anomalies")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total_patients_analyzed"] == 0
+    assert body["anomalous_patients"] == []
+    assert body["min_patients_required"] == 5
