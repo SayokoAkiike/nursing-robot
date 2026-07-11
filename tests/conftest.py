@@ -3,11 +3,14 @@ import os
 import pytest
 
 os.environ.setdefault("NURSE_TOKEN", "precare-dev-token-2026")
+os.environ.setdefault("ROBOT_TOKEN", "precare-dev-robot-token-2026")
 
 from backend.db import session as db_session
 
 NURSE_TOKEN = "precare-dev-token-2026"
 HEADERS = {"x-nurse-token": NURSE_TOKEN}
+ROBOT_TOKEN = "precare-dev-robot-token-2026"
+ROBOT_HEADERS = {"x-robot-token": ROBOT_TOKEN}
 
 
 @pytest.fixture

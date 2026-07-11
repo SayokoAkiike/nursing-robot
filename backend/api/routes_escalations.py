@@ -3,11 +3,14 @@
 `ack` is nurse-authenticated (mirrors `routes_tasks.py` /
 `routes_verification.py`'s use of `require_nurse`); `GET /escalations` is
 not, matching `GET /requests`'s precedent of being a read-only view
-anyone with API access can see.
+anyone with API access can see. `vision-report` is robot-authenticated
+(`require_robot`, PR35 follow-up) -- see `backend/core/config.py`'s
+`Settings.robot_token` docstring for why this one specifically needed a
+token while /rounding/*'s unauthenticated endpoints didn't.
 """
 from fastapi import APIRouter, Depends
 
-from backend.core.security import require_nurse
+from backend.core.security import require_nurse, require_robot
 from backend.schemas.rounding import AckRequest, VisionEscalationRequest
 from backend.services import escalation_service
 
@@ -30,12 +33,16 @@ def get_escalation(escalation_id: str):
     return escalation_service.get_escalation(escalation_id)
 
 
-@router.post("/vision-report")
+@router.post("/vision-report", dependencies=[Depends(require_robot)])
 def report_vision_escalation(body: VisionEscalationRequest):
-    """PR30: unauthenticated like /rounding/* -- this represents a
-    sensor/robot observation (a camera seeing a patient leave the bed
-    unsupervised), not a nurse action, same reasoning routes_rounding.py
-    documents for its own endpoints."""
+    """PR30: represents a sensor/robot observation (a camera seeing a
+    patient leave the bed unsupervised), not a nurse action -- but
+    unlike /rounding/*'s endpoints, this one is a stateless, one-shot
+    write with no prior session/state-machine gate, so it needed its
+    own auth (require_robot, PR35 follow-up) rather than staying
+    unauthenticated. See routes_rounding.py's own docstring for the
+    contrasting "unauthenticated is fine because state-gated" reasoning
+    that endpoint family still relies on."""
     return escalation_service.raise_direct_escalation(
         room=body.room,
         patient_id=body.patient_id,

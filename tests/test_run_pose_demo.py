@@ -69,6 +69,7 @@ def test_confirmed_fall_risk_reports_escalation(tmp_path, robot_storage):
             patient_id="PATIENT_A_ROOM_203",
             confirm_frames=3,
             client=_client(),
+            robot_token="precare-dev-robot-token-2026",
         )
 
     assert result is not None
@@ -115,6 +116,7 @@ def test_intermittent_fall_risk_does_not_reach_confirm_threshold(tmp_path, robot
             patient_id="PATIENT_A_ROOM_203",
             confirm_frames=3,
             client=_client(),
+            robot_token="precare-dev-robot-token-2026",
         )
 
     assert result is None
@@ -134,6 +136,7 @@ def test_all_in_bed_never_reports(tmp_path, robot_storage):
             patient_id="PATIENT_A_ROOM_203",
             confirm_frames=3,
             client=_client(),
+            robot_token="precare-dev-robot-token-2026",
         )
 
     assert result is None
@@ -182,6 +185,7 @@ def test_sudden_vertical_motion_upgrades_static_in_bed_to_fall_risk(tmp_path, ro
             patient_id="PATIENT_A_ROOM_203",
             confirm_frames=3,
             client=_client(),
+            robot_token="precare-dev-robot-token-2026",
         )
 
     assert result is not None
@@ -219,6 +223,7 @@ def test_gap_in_tracking_resets_motion_history(tmp_path, robot_storage):
             patient_id="PATIENT_A_ROOM_203",
             confirm_frames=3,
             client=_client(),
+            robot_token="precare-dev-robot-token-2026",
         )
 
     # Both are within BED's y-range, so no static fall_risk either --

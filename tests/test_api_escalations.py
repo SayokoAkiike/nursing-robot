@@ -1,5 +1,6 @@
 """API tests for /escalations/* endpoints."""
 HEADERS = {"x-nurse-token": "precare-dev-token-2026"}
+ROBOT_HEADERS = {"x-robot-token": "precare-dev-robot-token-2026"}
 
 
 def _escalated_session(api_client):
@@ -109,10 +110,27 @@ def test_list_escalations_filtered_by_status(api_client):
 # ---- PR30: POST /escalations/vision-report ----------------------------------
 
 
-def test_vision_report_creates_pending_escalation_unauthenticated(api_client):
-    """Unauthenticated on purpose -- represents a sensor/robot
-    observation, not a nurse action (mirrors /rounding/* endpoints'
-    reasoning)."""
+def test_vision_report_requires_robot_token(api_client):
+    """PR35 follow-up: unlike /rounding/*, vision-report is a stateless
+    one-shot write with no session/state-machine gate of its own, so it
+    needed its own auth rather than staying unauthenticated."""
+    r = api_client.post(
+        "/escalations/vision-report",
+        json={"room": "203", "patient_id": "PATIENT_A_ROOM_203", "summary": "s"},
+    )
+    assert r.status_code == 401
+
+
+def test_vision_report_rejects_wrong_robot_token(api_client):
+    r = api_client.post(
+        "/escalations/vision-report",
+        json={"room": "203", "patient_id": "PATIENT_A_ROOM_203", "summary": "s"},
+        headers={"x-robot-token": "not-the-real-token"},
+    )
+    assert r.status_code == 401
+
+
+def test_vision_report_creates_pending_escalation_with_valid_token(api_client):
     r = api_client.post(
         "/escalations/vision-report",
         json={
@@ -123,6 +141,7 @@ def test_vision_report_creates_pending_escalation_unauthenticated(api_client):
             "reason": "fall_risk",
             "suggested_action": "至急、看護師が訪室してください。",
         },
+        headers=ROBOT_HEADERS,
     )
     assert r.status_code == 200
     body = r.json()
@@ -135,6 +154,7 @@ def test_vision_report_defaults_priority_and_reason(api_client):
     r = api_client.post(
         "/escalations/vision-report",
         json={"room": "203", "patient_id": "PATIENT_A_ROOM_203", "summary": "s"},
+        headers=ROBOT_HEADERS,
     )
     assert r.status_code == 200
     body = r.json()
@@ -146,6 +166,7 @@ def test_vision_report_appears_in_escalations_list(api_client):
     api_client.post(
         "/escalations/vision-report",
         json={"room": "203", "patient_id": "PATIENT_A_ROOM_203", "summary": "s"},
+        headers=ROBOT_HEADERS,
     )
     escalations = api_client.get("/escalations").json()
     assert any(e["source"] == "vision_pose" for e in escalations)
