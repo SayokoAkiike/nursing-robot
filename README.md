@@ -103,7 +103,10 @@ flowchart TB
 | 実音声認識（faster-whisper、オフライン・ローカル完結、`--audio-file`でWAVファイルを文字起こしして巡回フローに接続） | `perception/speech_source.py`, `perception/speech_recognizer.py`, `backend/scripts/run_simulated_rounding.py` | ✅ |
 | 実姿勢推定・離床検知（MediaPipe Pose、静止位置＋速度/加速度の時系列判定を組み合わせてベッド領域外への離床を連続フレームで確認してから看護師へ直接エスカレーション） | `perception/pose_detector.py`, `backend/services/bed_exit_service.py`, `backend/scripts/run_pose_demo.py`, `backend/scripts/download_pose_model.py` | ✅ |
 | セッション不要の直接エスカレーション（配送エラー・映像検知など、巡回セッションを介さない安全通知の共通経路） | `backend/services/escalation_service.py` (`raise_direct_escalation`) | ✅ |
-| pytest テスト（337件） | `tests/` （API/workflow service/state machine/repositories/verification/perception/vision/analytics/Docker設定/PyBulletシミュレーション/Grafana設定/GUIデモ/巡回ワークフロー/ドメイン登録/マルチロボット/UIリアルタイム更新/音声認識/姿勢推定） | ✅ |
+| 埋め込みベース要望分類フォールバック（キーワード未一致時、sentence-transformersによる言い換え吸収） | `backend/services/semantic_classification_service.py` | ✅ |
+| ローカルLLM要望分類フォールバック（キーワード・埋め込み双方が未一致の場合の最終段、llama-cpp-python + LFM2.5-1.2B-JP） | `backend/services/llm_classification_service.py` | ✅ |
+| 離床検知の時系列判定（腰の速度・加速度を追跡し、静止位置判定を補完） | `backend/services/bed_exit_service.py` (`MotionTracker`) | ✅ |
+| pytest テスト（370件超） | `tests/` （API/workflow service/state machine/repositories/verification/perception/vision/analytics/Docker設定/PyBulletシミュレーション/Grafana設定/GUIデモ/巡回ワークフロー/ドメイン登録/マルチロボット/UIリアルタイム更新/音声認識/姿勢推定/埋め込み分類/ローカルLLM分類/時系列離床検知） | ✅ |
 
 ## ❌ 未実装（今後の予定）
 
@@ -528,6 +531,18 @@ cv2.imwrite('/tmp/test_frames/frame_001.png', np.zeros((480,640,3), dtype=np.uin
 "
 python -m backend.scripts.run_pose_demo --source /tmp/test_frames --room 203 --patient-id PATIENT_A_ROOM_203 --bed-region 0.2,0.5,0.8,1.0 --confirm-frames 1
 ```
+
+### 要望分類の3段構え（キーワード → 埋め込み → ローカルLLM、Phase 4.5）
+
+`rounding_service.classify_need()`の要望分類は、3段階のフォールバックチェーンになっている。
+
+1. **キーワードマッチ**（`need_classification_service.py`）：高速・決定的・追加依存なし。「トイレ」「痛い」などの単語が含まれていればそこで確定する
+2. **文埋め込み類似度**（`semantic_classification_service.py`、Phase 4.5）：キーワードに一致しなかった場合のみ、言い換え表現（「お手洗いに連れて行ってください」等）を拾う
+3. **ローカルLLM**（`llm_classification_service.py`、Phase 4.5）：前の2段階が両方とも`unknown`だった場合のみ、[LiquidAI/LFM2.5-1.2B-JP-GGUF](https://huggingface.co/LiquidAI/LFM2.5-1.2B-JP-GGUF)（日本語特化・約730MB・Q4量子化）に分類させる
+
+各段階は前段階が`unknown`のときだけ呼ばれ、後の段階が前段階の確信度の高い答えを上書きすることはない。3段階とも失敗しても（モデル未ダウンロード・依存未インストールなど）`classify_need()`自体は失敗せず、キーワード段階の結果（多くは`unknown`）にそのまま倒れる——巡回ワークフローの安全性は、精度向上の追加機能が使えるかどうかに依存しない設計になっている。
+
+`llama-cpp-python`は`torch`に依存しない軽量なバインディングだが、**PyPIにプリビルドwheelが無く、`pip install`のたびにC++バックエンド（llama.cpp本体）をソースからビルドする**。数分かかることがあるが、フリーズしているわけではない。GGUFモデル本体は初回の実際の分類実行時にHugging Faceから別途ダウンロードされる（`faster-whisper`・`sentence-transformers`と同じ、初回のみの自動ダウンロード方式）。
 
 ### ローカルGUIデモ（`backend/scripts/run_gui_demo.py`、PR20）
 

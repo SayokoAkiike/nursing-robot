@@ -156,21 +156,28 @@ def start_interaction(session_id: str) -> dict:
     return {"prompt": DEFAULT_PROMPT, "session": _view(session_id)}
 
 
-def _classify_with_semantic_fallback(patient_response: str) -> "need_classification_service.Classification":
-    """Keyword rules first (fast, deterministic, zero ML dependency,
-    unchanged behavior from PR23) -- semantic_classification_service is
-    only consulted when that returns "unknown", and only its result is
-    used if IT found something more specific than "unknown" too.
+def _classify_with_ml_fallbacks(patient_response: str) -> "need_classification_service.Classification":
+    """Three-tier classification chain, cheapest/fastest first:
+    keyword rules (PR23) -> sentence-embedding similarity (PR31) -> local
+    LLM (PR34/B). Each tier is only consulted if every earlier tier
+    returned "unknown", and a later tier's result is only used if IT
+    found something more specific than "unknown" too -- a later tier
+    can never override an earlier tier's confident answer, only fill in
+    when earlier tiers found nothing.
 
-    PR31: wrapped in try/except deliberately broad (not just ImportError)
-    -- the semantic classifier's first real use downloads a ~470MB model
-    from Hugging Face, so a network hiccup, a missing optional dependency
-    (sentence-transformers isn't in every environment this could run in),
-    or any other failure in that path must degrade to the keyword result
-    rather than making classify_need() -- a safety-relevant step in the
-    rounding workflow -- fail because an accuracy *enhancement* wasn't
-    available. See semantic_classification_service.py's module docstring
-    for the same reasoning stated from that side.
+    PR31/PR34: both ML tiers are wrapped in a deliberately broad
+    try/except (not just ImportError) -- each downloads a real model on
+    first use (semantic: ~470MB from Hugging Face; LLM: ~730MB GGUF,
+    also from Hugging Face, plus llama-cpp-python itself compiles from
+    source rather than shipping a prebuilt wheel), so a network hiccup,
+    a missing optional dependency, an out-of-memory condition, or any
+    other failure in either path must degrade to whatever the previous
+    tier already found rather than making classify_need() -- a
+    safety-relevant step in the rounding workflow -- fail because an
+    accuracy *enhancement* wasn't available. See
+    semantic_classification_service.py's and llm_classification_service.
+    py's own module docstrings for the same reasoning stated from each
+    side.
     """
     keyword_result = need_classification_service.classify(patient_response)
     if keyword_result.detected_need != "unknown":
@@ -181,11 +188,21 @@ def _classify_with_semantic_fallback(patient_response: str) -> "need_classificat
 
         semantic_result = SemanticClassifier().classify(patient_response)
     except Exception:
+        semantic_result = keyword_result
+
+    if semantic_result.detected_need != "unknown":
+        return semantic_result
+
+    try:
+        from backend.services.llm_classification_service import LLMClassifier
+
+        llm_result = LLMClassifier().classify(patient_response)
+    except Exception:
         return keyword_result
 
-    if semantic_result.detected_need == "unknown":
+    if llm_result.detected_need == "unknown":
         return keyword_result
-    return semantic_result
+    return llm_result
 
 
 def classify_need(
@@ -202,7 +219,7 @@ def classify_need(
     current = session["status"]
     _advance(session_id, current, "NEED_CLASSIFIED")
 
-    classification = _classify_with_semantic_fallback(patient_response)
+    classification = _classify_with_ml_fallbacks(patient_response)
     now = datetime.now()
 
     repositories.insert_patient_interaction(

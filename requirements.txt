@@ -81,3 +81,17 @@ mediapipe==0.10.33
 # pick the default PyPI CUDA build even with that extra index present.
 torch==2.13.0+cpu
 sentence-transformers==5.6.0
+
+# Local LLM classification fallback for rounding need classification
+# (PR34/B) -- the third and most expensive tier of the classification
+# chain, see backend/services/llm_classification_service.py. Unlike
+# sentence-transformers, llama-cpp-python has NO torch dependency and
+# stays lightweight on disk -- but unlike every other ML dependency in
+# this file, it has no prebuilt wheel on PyPI and compiles its C++
+# backend (llama.cpp itself) from source on every `pip install`. This
+# can take several minutes even on a reasonably fast machine; it is not
+# stuck, just compiling. The GGUF model weights (~730MB,
+# LiquidAI/LFM2.5-1.2B-JP-GGUF) download separately from Hugging Face
+# on first actual use, same one-time-download pattern as PR29's
+# faster-whisper and PR31's sentence-transformers.
+llama-cpp-python==0.3.33
