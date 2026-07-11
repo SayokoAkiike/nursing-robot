@@ -7,7 +7,7 @@ import pytest
 
 from backend.core.errors import ConflictError, DomainError, NotFoundError
 from backend.db import repositories
-from backend.services import rounding_service
+from backend.services import need_classification_service, rounding_service
 
 
 def test_start_rounding_creates_session_in_rounding_state(robot_storage):
@@ -350,3 +350,143 @@ def test_semantic_fallback_real_model_end_to_end(robot_storage):
             "tuning against the real model's actual behavior.",
             stacklevel=1,
         )
+
+
+# ---- PR34 (B): local LLM tier (third stage of the fallback chain) -----------
+
+
+def test_semantic_result_short_circuits_llm_tier(robot_storage, monkeypatch):
+    """A phrase the semantic tier already resolves must never even try
+    to load the (much slower/heavier) LLM tier."""
+    from backend.services.need_classification_service import Classification
+
+    def fake_semantic_classify(self, patient_response):
+        return Classification(
+            detected_need="toileting", escalation_level="HIGH", route="NURSE_NOTIFICATION", confidence="semantic"
+        )
+
+    llm_called = False
+
+    def fail_if_llm_called(self, patient_response):
+        nonlocal llm_called
+        llm_called = True
+        raise AssertionError("LLM tier should not have been consulted")
+
+    monkeypatch.setattr(
+        "backend.services.semantic_classification_service.SemanticClassifier.classify",
+        fake_semantic_classify,
+    )
+    monkeypatch.setattr(
+        "backend.services.llm_classification_service.LLMClassifier.classify",
+        fail_if_llm_called,
+    )
+
+    session = rounding_service.start_rounding("203")
+    _to_interaction_started(session["id"])
+    result = rounding_service.classify_need(session["id"], "用を足したいです")
+
+    assert result["detected_need"] == "toileting"
+    assert llm_called is False
+
+
+def test_llm_tier_used_when_keyword_and_semantic_both_find_nothing(robot_storage, monkeypatch):
+    from backend.services.need_classification_service import Classification
+
+    def semantic_unknown(self, patient_response):
+        return Classification(detected_need="unknown", escalation_level="LOW", route="INFORMATION_ONLY", confidence="low")
+
+    def fake_llm_classify(self, patient_response):
+        return Classification(
+            detected_need="pain", escalation_level="URGENT", route="URGENT_ESCALATION", confidence="llm"
+        )
+
+    monkeypatch.setattr(
+        "backend.services.semantic_classification_service.SemanticClassifier.classify",
+        semantic_unknown,
+    )
+    monkeypatch.setattr(
+        "backend.services.llm_classification_service.LLMClassifier.classify",
+        fake_llm_classify,
+    )
+
+    session = rounding_service.start_rounding("203")
+    _to_interaction_started(session["id"])
+    result = rounding_service.classify_need(session["id"], "なんとなく体調がすぐれません")
+
+    assert result["detected_need"] == "pain"
+    assert result["escalation_level"] == "URGENT"
+
+
+def test_llm_tier_failure_degrades_to_keyword_unknown(robot_storage, monkeypatch):
+    """If the LLM tier raises for any reason (model not downloaded,
+    llama-cpp-python not installed, out of memory, whatever),
+    classify_need() must still succeed -- degrading to the keyword
+    result rather than propagating the failure."""
+    from backend.services.need_classification_service import Classification
+
+    def semantic_unknown(self, patient_response):
+        return Classification(detected_need="unknown", escalation_level="LOW", route="INFORMATION_ONLY", confidence="low")
+
+    def raise_error(self, patient_response):
+        raise RuntimeError("model download failed")
+
+    monkeypatch.setattr(
+        "backend.services.semantic_classification_service.SemanticClassifier.classify",
+        semantic_unknown,
+    )
+    monkeypatch.setattr(
+        "backend.services.llm_classification_service.LLMClassifier.classify",
+        raise_error,
+    )
+
+    session = rounding_service.start_rounding("203")
+    _to_interaction_started(session["id"])
+    result = rounding_service.classify_need(session["id"], "なんとなく体調がすぐれません")
+
+    assert result["detected_need"] == "unknown"
+
+
+def test_llm_tier_returning_unknown_also_falls_back_to_keyword_unknown(robot_storage, monkeypatch):
+    from backend.services.need_classification_service import Classification
+
+    def unknown_result(self, patient_response):
+        return Classification(detected_need="unknown", escalation_level="LOW", route="INFORMATION_ONLY", confidence="low")
+
+    monkeypatch.setattr(
+        "backend.services.semantic_classification_service.SemanticClassifier.classify",
+        unknown_result,
+    )
+    monkeypatch.setattr(
+        "backend.services.llm_classification_service.LLMClassifier.classify",
+        unknown_result,
+    )
+
+    session = rounding_service.start_rounding("203")
+    _to_interaction_started(session["id"])
+    result = rounding_service.classify_need(session["id"], "きょうはいい天気ですね")
+
+    assert result["detected_need"] == "unknown"
+
+
+def test_llm_fallback_real_model_end_to_end(robot_storage):
+    """Real llama-cpp-python + real LFM2.5-1.2B-JP GGUF model, no
+    mocking -- requires network access on first run (llama-cpp-python
+    itself compiles from source on install; the GGUF model weights,
+    ~730MB, download separately from Hugging Face on first use).
+    Skipped with a clear reason if either fails, same pattern PR29/30/31
+    use for their own real-model tests."""
+    session = rounding_service.start_rounding("203")
+    _to_interaction_started(session["id"])
+    try:
+        result = rounding_service.classify_need(session["id"], "なんとなく体調がすぐれません")
+    except Exception as exc:  # pragma: no cover - network/build-dependent
+        import pytest as _pytest
+
+        _pytest.skip(f"LLM classification unavailable (likely no network or llama-cpp-python not built): {exc}")
+
+    # Deliberately not asserting a specific detected_need -- this phrase
+    # is intentionally vague (nothing a keyword or embedding match would
+    # confidently resolve either), so the point of this test is only that
+    # the full three-tier chain runs to completion without raising, not
+    # that the LLM lands on any particular category.
+    assert result["detected_need"] in need_classification_service.known_needs() + ["unknown"]
