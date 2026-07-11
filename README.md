@@ -476,6 +476,16 @@ python -m backend.scripts.run_simulated_rounding --scenario rounding_toileting_e
 
 `run_simulated_rounding.py`に`--audio-file`を渡すと、シナリオの疑似応答テキストの代わりに、指定したWAVファイルを実際に音声認識（[faster-whisper](https://github.com/SYSTRAN/faster-whisper)、CPU/int8、完全オフライン）した結果を`/classify-need`に流す。クラウドAPIには一切送信しない（本番導入では患者の実音声を外部サービスに送るべきではないため、プロトタイプの段階からこの制約を守っている）。モデル重みは初回実行時にHugging Faceから自動ダウンロードされ、以降はローカルにキャッシュされる。
 
+デフォルトモデルは`medium`（精度重視、初回ダウンロード約1.5GB）＋VAD（音声区間検出、faster-whisper同梱のSilero VADで無音区間を除去してから認識するため誤認識・幻覚テキストが減る）。ディスク容量やダウンロード時間が厳しい環境では、`SPEECH_MODEL_SIZE`環境変数で`small`（約470MB）などに切り替えられる。
+
+```bash
+SPEECH_MODEL_SIZE=small python -m backend.scripts.run_simulated_rounding \
+  --scenario rounding_toileting_escalation \
+  --nurse-token $NURSE_TOKEN \
+  --audio-file perception/audio_demo/toileting_ja.wav \
+  --auto-ack
+```
+
 ```bash
 python -m backend.scripts.run_simulated_rounding \
   --scenario rounding_toileting_escalation \

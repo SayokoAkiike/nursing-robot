@@ -17,13 +17,30 @@ existing file and returns text -- it does not write, copy, or cache the
 audio itself anywhere. Only the returned text is meant to flow into
 `patient_interactions.patient_response`, exactly like the "simulated" /
 "manual" input modes already do.
+
+PR32 (D): two accuracy improvements over PR29's original "small" model,
+no-VAD baseline --
+
+  - DEFAULT_MODEL_SIZE bumped to "medium". Still runs CPU/int8 (no GPU
+    assumed), noticeably slower to load/transcribe than "small" but a
+    real accuracy step up for Japanese; still configurable per-instance
+    for anyone who wants to trade back down for speed.
+  - vad_filter=True by default: faster-whisper bundles Silero VAD
+    (no extra dependency -- it ships inside the faster-whisper package
+    itself), which strips leading/trailing/internal silence before
+    transcription. This matters specifically for this project's use
+    case: a live rounding conversation's recording will have real
+    silence around the actual answer (the patient pausing before/after
+    speaking), and transcribing silence both wastes CPU time and is a
+    source of hallucinated text in Whisper-family models.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-DEFAULT_MODEL_SIZE = "small"
+DEFAULT_MODEL_SIZE = "medium"
 DEFAULT_LANGUAGE = "ja"
+DEFAULT_VAD_FILTER = True
 
 
 class SpeechRecognizer:
@@ -36,9 +53,15 @@ class SpeechRecognizer:
     model load cost.
     """
 
-    def __init__(self, model_size: str = DEFAULT_MODEL_SIZE, language: str = DEFAULT_LANGUAGE):
+    def __init__(
+        self,
+        model_size: str = DEFAULT_MODEL_SIZE,
+        language: str = DEFAULT_LANGUAGE,
+        vad_filter: bool = DEFAULT_VAD_FILTER,
+    ):
         self.model_size = model_size
         self.language = language
+        self.vad_filter = vad_filter
         self._model = None
 
     def _get_model(self):
@@ -57,11 +80,15 @@ class SpeechRecognizer:
         `need_classification_service.classify()`'s own "never raises on
         an unrecognized/empty response, falls through to 'unknown'"
         contract -- a rounding session shouldn't error out just because
-        nothing was said."""
+        nothing was said (and with vad_filter=True, "nothing was said"
+        is exactly what an all-silence recording now correctly resolves
+        to, rather than a hallucinated phrase)."""
         path = Path(audio_path)
         if not path.exists():
             raise FileNotFoundError(f"Audio file not found: {path}")
 
         model = self._get_model()
-        segments, _info = model.transcribe(str(path), language=self.language)
+        segments, _info = model.transcribe(
+            str(path), language=self.language, vad_filter=self.vad_filter
+        )
         return "".join(segment.text for segment in segments).strip()
