@@ -146,6 +146,48 @@ def test_detect_anomalies_is_deterministic():
     ]
 
 
+def test_detect_anomalies_flags_multi_feature_outlier_with_wide_ack_time_noise():
+    """Sanity check for the StandardScaler step: avg_time_to_ack_seconds
+    naturally spans hundreds-to-thousands while the other three features
+    span single digits, which is exactly the kind of scale mismatch that
+    can skew IsolationForest's random splits toward whichever feature
+    has the largest raw numeric range. This asserts a clear
+    count/priority-based outlier still gets flagged when ack times are
+    noisy across the whole population -- it does NOT prove scaling
+    changes the outcome for every possible input (a quick manual check
+    during review found this specific scenario flags the same way with
+    or without scaling), only that the standardized pipeline behaves
+    sensibly on it. Standardizing remains the theoretically sound choice
+    regardless -- see the comment in detect_anomalies() -- this test
+    just guards against a future regression in this concrete case."""
+    import random
+
+    rng = random.Random(0)
+    features = [
+        PatientEscalationFeatures(
+            patient_id=f"P{i}",
+            escalation_count=2,
+            urgent_count=0,
+            avg_priority_score=2.0,
+            avg_time_to_ack_seconds=rng.uniform(60.0, 3600.0),  # wide but unremarkable range
+        )
+        for i in range(9)
+    ]
+    outlier = PatientEscalationFeatures(
+        patient_id="COUNT_OUTLIER",
+        escalation_count=25,
+        urgent_count=20,
+        avg_priority_score=3.9,
+        avg_time_to_ack_seconds=1800.0,  # squarely inside the "normal" ack-time range
+    )
+    features.append(outlier)
+
+    results = detect_anomalies(features)
+    by_id = {r.patient_id: r for r in results}
+
+    assert by_id["COUNT_OUTLIER"].is_anomalous is True
+
+
 def test_detect_anomalies_handles_none_ack_time_in_feature_vector():
     """A patient with no acknowledged escalations yet (avg_time_to_ack_seconds
     is None) must not crash the feature matrix construction."""

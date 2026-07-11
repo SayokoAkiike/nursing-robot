@@ -121,6 +121,7 @@ def detect_anomalies(features: list[PatientEscalationFeatures]) -> list[AnomalyR
         return []
 
     from sklearn.ensemble import IsolationForest
+    from sklearn.preprocessing import StandardScaler
 
     matrix = [
         [
@@ -132,9 +133,19 @@ def detect_anomalies(features: list[PatientEscalationFeatures]) -> list[AnomalyR
         for f in features
     ]
 
+    # Standardize before fitting -- without this, avg_time_to_ack_seconds
+    # (typically in the hundreds/thousands) dwarfs the other three
+    # features (all single-digit), which skews IsolationForest's random
+    # split budget toward that one feature and effectively makes this
+    # "detect patients with unusually long ack times" rather than a
+    # genuinely multi-feature anomaly signal. Each feature is scaled to
+    # zero mean / unit variance across the current patient population
+    # before the forest ever sees it.
+    scaled_matrix = StandardScaler().fit_transform(matrix)
+
     model = IsolationForest(contamination="auto", random_state=42)
-    predictions = model.fit_predict(matrix)
-    scores = model.score_samples(matrix)
+    predictions = model.fit_predict(scaled_matrix)
+    scores = model.score_samples(scaled_matrix)
 
     return [
         AnomalyResult(
