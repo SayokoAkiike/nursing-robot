@@ -55,3 +55,10 @@ faster-whisper==1.2.1
 # in Codespaces/CI, which have no audio input device). Uncomment to try
 # live mic recording on a machine that has one:
 # sounddevice==0.4.7
+
+# Pose estimation / bed-exit detection for the rounding workflow (PR30).
+# No numpy upper-bound conflict with the numpy==1.26.4 pin above --
+# verified working against it despite mediapipe having no explicit numpy
+# version constraint of its own (pip's resolver will otherwise happily
+# pull numpy 2.x, which breaks streamlit==1.35.0's numpy<2 requirement).
+mediapipe==0.10.33

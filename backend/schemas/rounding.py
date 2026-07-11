@@ -45,3 +45,17 @@ class RequireDeliveryRequest(BaseModel):
 
 class AckRequest(BaseModel):
     acknowledged_by: str
+
+
+class VisionEscalationRequest(BaseModel):
+    """PR30: body for POST /escalations/vision-report -- a pose-detection
+    script (backend/scripts/run_pose_demo.py) reports a bed-exit/fall-risk
+    event it already assessed (perception/bed_exit_service.py) without
+    needing a rounding session behind it."""
+
+    room: str | None = None
+    patient_id: str | None = None
+    summary: str
+    priority: str = "URGENT"
+    reason: str | None = "fall_risk"
+    suggested_action: str | None = None

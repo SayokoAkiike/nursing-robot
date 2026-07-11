@@ -198,3 +198,53 @@ def test_acknowledge_without_rounding_session_returns_none_session(robot_storage
 
     assert result["session"] is None
     assert result["escalation"]["status"] == "ACKNOWLEDGED"
+
+
+# ---- PR30: raise_direct_escalation (vision/pose source) --------------------
+
+
+def test_raise_direct_escalation_creates_pending_row_with_no_session(robot_storage):
+    escalation = escalation_service.raise_direct_escalation(
+        room="203",
+        patient_id="PATIENT_A_ROOM_203",
+        summary="203号室 PATIENT_A_ROOM_203 が離床（転倒の危険）を検知されました。",
+        priority="URGENT",
+        reason="fall_risk",
+        suggested_action="至急、看護師が訪室し、患者の安全を直接確認してください。転倒・転落の恐れがあります。",
+        source="vision_pose",
+    )
+    assert escalation["status"] == "PENDING"
+    assert escalation["rounding_session_id"] is None
+    assert escalation["request_id"] is None
+    assert escalation["source"] == "vision_pose"
+    assert escalation["priority"] == "URGENT"
+
+
+def test_raise_direct_escalation_is_immediately_listed(robot_storage):
+    escalation_service.raise_direct_escalation(
+        room="203",
+        patient_id="PATIENT_A_ROOM_203",
+        summary="s",
+        priority="URGENT",
+        reason="fall_risk",
+        suggested_action=None,
+        source="vision_pose",
+    )
+    pending = escalation_service.list_escalations(status="PENDING")
+    assert len(pending) == 1
+    assert pending[0]["source"] == "vision_pose"
+
+
+def test_raise_direct_escalation_can_be_acknowledged_with_no_session_to_complete(robot_storage):
+    escalation = escalation_service.raise_direct_escalation(
+        room="203",
+        patient_id="PATIENT_A_ROOM_203",
+        summary="s",
+        priority="URGENT",
+        reason="fall_risk",
+        suggested_action=None,
+        source="vision_pose",
+    )
+    result = escalation_service.acknowledge(escalation["id"], "nurse_demo")
+    assert result["session"] is None
+    assert result["escalation"]["status"] == "ACKNOWLEDGED"

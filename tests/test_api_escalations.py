@@ -104,3 +104,48 @@ def test_list_escalations_filtered_by_status(api_client):
     assert pending == []
     acked = api_client.get("/escalations", params={"status": "ACKNOWLEDGED"}).json()
     assert len(acked) == 1
+
+
+# ---- PR30: POST /escalations/vision-report ----------------------------------
+
+
+def test_vision_report_creates_pending_escalation_unauthenticated(api_client):
+    """Unauthenticated on purpose -- represents a sensor/robot
+    observation, not a nurse action (mirrors /rounding/* endpoints'
+    reasoning)."""
+    r = api_client.post(
+        "/escalations/vision-report",
+        json={
+            "room": "203",
+            "patient_id": "PATIENT_A_ROOM_203",
+            "summary": "203号室 PATIENT_A_ROOM_203 が離床を検知されました。",
+            "priority": "URGENT",
+            "reason": "fall_risk",
+            "suggested_action": "至急、看護師が訪室してください。",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "PENDING"
+    assert body["source"] == "vision_pose"
+    assert body["rounding_session_id"] is None
+
+
+def test_vision_report_defaults_priority_and_reason(api_client):
+    r = api_client.post(
+        "/escalations/vision-report",
+        json={"room": "203", "patient_id": "PATIENT_A_ROOM_203", "summary": "s"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["priority"] == "URGENT"
+    assert body["reason"] == "fall_risk"
+
+
+def test_vision_report_appears_in_escalations_list(api_client):
+    api_client.post(
+        "/escalations/vision-report",
+        json={"room": "203", "patient_id": "PATIENT_A_ROOM_203", "summary": "s"},
+    )
+    escalations = api_client.get("/escalations").json()
+    assert any(e["source"] == "vision_pose" for e in escalations)

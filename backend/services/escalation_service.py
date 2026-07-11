@@ -9,6 +9,7 @@ conceptually distinct from the patient-triggered create_request/cancel,
 even though PR23 doesn't split those into separate modules the way this
 one is split out for rounding).
 """
+import uuid
 from datetime import datetime
 
 from backend.core.config import (
@@ -124,3 +125,56 @@ def acknowledge(escalation_id: str, acknowledged_by: str) -> dict:
     if escalation.get("rounding_session_id"):
         session = rounding_service.acknowledge_and_complete(escalation["rounding_session_id"])
     return {"escalation": get_escalation(escalation_id), "session": session}
+
+
+def raise_direct_escalation(
+    *,
+    room: str | None,
+    patient_id: str | None,
+    summary: str,
+    priority: str,
+    reason: str | None,
+    suggested_action: str | None,
+    source: str,
+) -> dict:
+    """Raise a `nurse_escalations` row with no rounding session behind it
+    (`rounding_session_id`/`request_id` both None) -- for a source that
+    detected a safety-relevant event directly rather than through a
+    rounding conversation. PR30's pose-based bed-exit detection
+    (`backend/scripts/run_pose_demo.py`) is the first caller
+    (`source="vision_pose"`), joining `source="delivery_error"`
+    (`workflow_service._raise_error_escalation()`, which stayed private
+    to that module rather than being unified with this one here --
+    delivery errors are tightly coupled to `robot_tasks`/`care_requests`
+    state in a way this generic version deliberately doesn't need to
+    know about).
+
+    Deliberately lives here, not in `perception/` -- `backend/services/*`
+    never imports from `perception/` (only `backend/scripts/*` does, see
+    `run_simulated_delivery.py`), so a caller in `perception/` or a
+    script that used it computes whatever perception-specific assessment
+    it needs first, then calls this with plain strings only.
+
+    Returns the newly created escalation (same shape `get_escalation()`
+    returns)."""
+    escalation_id = str(uuid.uuid4())[:8]
+    now = datetime.now()
+    repositories.insert_nurse_escalation(
+        {
+            "id": escalation_id,
+            "rounding_session_id": None,
+            "request_id": None,
+            "patient_id": patient_id,
+            "room": room,
+            "summary": summary,
+            "priority": priority,
+            "reason": reason,
+            "suggested_action": suggested_action,
+            "status": "PENDING",
+            "created_at": now,
+            "acknowledged_at": None,
+            "acknowledged_by": None,
+            "source": source,
+        }
+    )
+    return get_escalation(escalation_id)
