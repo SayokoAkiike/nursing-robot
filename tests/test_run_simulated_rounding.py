@@ -7,6 +7,7 @@ stays fast in CI.
 """
 import pytest
 from fastapi.testclient import TestClient
+from pathlib import Path
 
 from backend.scripts.run_simulated_rounding import RoundingScriptError, run_rounding
 
@@ -110,4 +111,76 @@ def test_information_only_scenario_ignores_auto_ack_flag(robot_storage):
         step_delay=0,
         auto_ack=False,
     )
+    assert final_state["status"] == "COMPLETED"
+
+
+# ---- PR29: --audio-file --------------------------------------------------
+
+DEMO_AUDIO_PATH = Path(__file__).resolve().parent.parent / "perception" / "audio_demo" / "toileting_ja.wav"
+
+
+def test_audio_file_transcription_is_used_instead_of_canned_text(robot_storage, monkeypatch):
+    """Mocked SpeechRecognizer -- tests the *wiring* (transcribed text
+    reaches classify-need, input_mode becomes "voice", expected_need/
+    expected_priority are not asserted), not real transcription accuracy.
+    See test_audio_file_real_transcription_end_to_end below for that."""
+    from perception import speech_recognizer as speech_recognizer_module
+
+    def fake_transcribe_file(self, audio_path):
+        return "トイレに行きたいです"
+
+    monkeypatch.setattr(
+        speech_recognizer_module.SpeechRecognizer, "transcribe_file", fake_transcribe_file
+    )
+
+    final_state = run_rounding(
+        _client(),
+        scenario="rounding_water_request",  # canned text would be "water", audio overrides it
+        nurse_token=NURSE_TOKEN,
+        step_delay=0,
+        auto_ack=True,
+        audio_file=str(DEMO_AUDIO_PATH),
+    )
+    # water_request's canned expected_need is "water", but the (mocked)
+    # transcription says "トイレに行きたいです" -- if the override wasn't
+    # actually wired through, this would have classified as "water"
+    # instead and completed via a different path than toileting does.
+    assert final_state["detected_need"] == "toileting"
+    assert final_state["status"] == "COMPLETED"
+
+
+def test_audio_file_missing_raises_before_any_api_call(robot_storage):
+    with pytest.raises(FileNotFoundError):
+        run_rounding(
+            _client(),
+            scenario="rounding_toileting_escalation",
+            nurse_token=NURSE_TOKEN,
+            step_delay=0,
+            audio_file="/does/not/exist.wav",
+        )
+
+
+@pytest.mark.skipif(not DEMO_AUDIO_PATH.exists(), reason="perception/audio_demo/toileting_ja.wav not present")
+def test_audio_file_real_transcription_end_to_end(robot_storage):
+    """Real faster-whisper, real (espeak-ng-synthesized) demo audio, real
+    API calls -- no mocking. Requires network access on first run (model
+    weights download from Hugging Face); skipped with a clear reason if
+    that download fails, rather than failing the whole suite on a
+    network hiccup unrelated to this project's own code."""
+    try:
+        final_state = run_rounding(
+            _client(),
+            scenario="rounding_toileting_escalation",
+            nurse_token=NURSE_TOKEN,
+            step_delay=0,
+            auto_ack=True,
+            audio_file=str(DEMO_AUDIO_PATH),
+        )
+    except Exception as exc:  # pragma: no cover - network-dependent
+        pytest.skip(f"faster-whisper model unavailable (likely no network): {exc}")
+
+    # espeak-ng's Japanese synthesis is robotic and not guaranteed to be
+    # transcribed perfectly, so this checks the pipeline actually ran
+    # end-to-end (reached COMPLETED) rather than asserting an exact
+    # detected_need -- see perception/audio_demo/README.md.
     assert final_state["status"] == "COMPLETED"

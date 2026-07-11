@@ -4,12 +4,17 @@ goes through the real HTTP surface (`/rounding/*`, `/escalations/*`) a
 real robot or the nurse dashboard would use, so no safety gate is
 bypassed by taking an in-process shortcut.
 
-Real person detection and speech recognition are out of scope (per the
-proposal doc: "最初は実際の人物検出や音声認識は不要です") -- each `--scenario`
-below is a pseudo patient-response event (room, patient_id,
-simulated_response, expected_need, expected_priority) fed straight into
-`POST /rounding/{id}/classify-need`, standing in for what a real
-voice/tablet input would eventually provide.
+Real person detection is out of scope (per the proposal doc: "実際の人物
+検出...は不要です") -- `--detect-patient` is still a plain API call, not a
+camera-driven trigger. Speech recognition is real as of PR29: pass
+`--audio-file <path.wav>` to have this script transcribe an actual WAV
+file offline (`perception/speech_recognizer.py`, faster-whisper) instead
+of using a scenario's canned `simulated_response` text -- see that
+option's own docstring in `run_rounding()` below. Without `--audio-file`,
+each `--scenario` remains a pseudo patient-response event (room,
+patient_id, simulated_response, expected_need, expected_priority) fed
+straight into `POST /rounding/{id}/classify-need`, standing in for real
+voice/tablet input.
 
 By default this script *stops* at WAITING_FOR_NURSE_ACK for any scenario
 that raises an escalation, and waits for a human to acknowledge it via
@@ -130,17 +135,43 @@ def run_rounding(
     auto_ack: bool = False,
     ack_poll_seconds: float = 2.0,
     ack_timeout_seconds: float = 120.0,
+    audio_file: "str | None" = None,
 ) -> dict:
     """Runs one simulated rounding session through the real API; returns
     the final `GET /rounding/{id}` view. Raises TimeoutError if the
     session escalates and nurse acknowledgement never arrives
-    (auto_ack=False) within ack_timeout_seconds."""
+    (auto_ack=False) within ack_timeout_seconds.
+
+    `audio_file` (PR29): if given, the scenario's canned
+    `simulated_response` text is replaced by the real transcription of
+    that WAV file (via `perception.speech_recognizer.SpeechRecognizer`,
+    offline/local -- see that module's docstring for why). `room` /
+    `patient_id` still come from the scenario, and `input_mode` becomes
+    "voice" instead of "simulated" -- but `expected_need`/
+    `expected_priority` are NOT asserted in this mode, since a real
+    speech-to-text transcription of the chosen phrase has no accuracy
+    guarantee against the scenario's canned expectation. Whatever
+    `need_classification_service` actually classifies the transcribed
+    text as is printed and used as-is."""
     if scenario not in SCENARIOS:
         raise RoundingScriptError(
             f"Unknown scenario: {scenario!r}. Known scenarios: {sorted(SCENARIOS)}"
         )
     event = SCENARIOS[scenario]
     nurse_headers = {"x-nurse-token": nurse_token}
+
+    if audio_file:
+        from perception.speech_recognizer import SpeechRecognizer
+        from perception.speech_source import WavFileSpeechSource
+
+        _step("TRANSCRIBING AUDIO (offline, faster-whisper)")
+        source = WavFileSpeechSource(audio_file)
+        patient_response = SpeechRecognizer().transcribe_file(source.get_path())
+        print(f"heard: {patient_response!r}")
+        input_mode = "voice"
+    else:
+        patient_response = event["simulated_response"]
+        input_mode = "simulated"
 
     _step("ROUNDING (robot begins rounding the ward)")
     started = _request(client, "POST", "/rounding/start", json={"room": event["room"]})
@@ -168,8 +199,8 @@ def run_rounding(
         "POST",
         f"/rounding/{session_id}/classify-need",
         json={
-            "patient_response": event["simulated_response"],
-            "input_mode": "simulated",
+            "patient_response": patient_response,
+            "input_mode": input_mode,
         },
     )
     print(
@@ -177,18 +208,26 @@ def run_rounding(
         f"escalation_level={classification['escalation_level']} "
         f"route={classification['route']}"
     )
-    if classification["detected_need"] != event["expected_need"]:
-        raise RoundingScriptError(
-            f"Scenario {scenario!r} expected detected_need="
-            f"{event['expected_need']!r} but got {classification['detected_need']!r} "
-            "-- need_classification_service's rules may have changed."
+    if audio_file:
+        print(
+            "(--audio-file was used: expected_need/expected_priority are not "
+            "asserted against a real transcription -- the classification "
+            "above reflects whatever need_classification_service made of "
+            "the actual recognized text.)"
         )
-    if classification["escalation_level"] != event["expected_priority"]:
-        raise RoundingScriptError(
-            f"Scenario {scenario!r} expected escalation_level="
-            f"{event['expected_priority']!r} but got "
-            f"{classification['escalation_level']!r}."
-        )
+    else:
+        if classification["detected_need"] != event["expected_need"]:
+            raise RoundingScriptError(
+                f"Scenario {scenario!r} expected detected_need="
+                f"{event['expected_need']!r} but got {classification['detected_need']!r} "
+                "-- need_classification_service's rules may have changed."
+            )
+        if classification["escalation_level"] != event["expected_priority"]:
+            raise RoundingScriptError(
+                f"Scenario {scenario!r} expected escalation_level="
+                f"{event['expected_priority']!r} but got "
+                f"{classification['escalation_level']!r}."
+            )
 
     if classification["route"] == "INFORMATION_ONLY":
         _step("INFORMATION_PROVIDED -> COMPLETED (no nurse gate to cross)")
@@ -266,6 +305,16 @@ def main() -> None:
         action="store_true",
         help="Acknowledge the escalation (if any) automatically instead of waiting for a human.",
     )
+    parser.add_argument(
+        "--audio-file",
+        default=None,
+        help=(
+            "PR29: path to a WAV file to transcribe offline (faster-whisper) "
+            "instead of using the scenario's canned simulated_response text. "
+            "room/patient_id still come from --scenario; expected_need/"
+            "expected_priority are not asserted in this mode."
+        ),
+    )
     args = parser.parse_args()
 
     if not args.nurse_token:
@@ -283,6 +332,7 @@ def main() -> None:
                 nurse_token=args.nurse_token,
                 step_delay=args.step_delay,
                 auto_ack=args.auto_ack,
+                audio_file=args.audio_file,
             )
         except (RoundingScriptError, TimeoutError) as exc:
             raise SystemExit(f"run_simulated_rounding failed: {exc}") from exc
