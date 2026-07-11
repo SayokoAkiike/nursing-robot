@@ -55,6 +55,7 @@ def test_transcribe_file_joins_segments_and_strips(mock_whisper_model_cls, tmp_p
     mock_model.transcribe.assert_called_once()
     _args, kwargs = mock_model.transcribe.call_args
     assert kwargs.get("language") == "ja"
+    assert kwargs.get("vad_filter") is True  # PR32: on by default
 
 
 @patch("faster_whisper.WhisperModel")
@@ -90,3 +91,34 @@ def test_custom_model_size_and_language_passed_through():
     recognizer = SpeechRecognizer(model_size="tiny", language="en")
     assert recognizer.model_size == "tiny"
     assert recognizer.language == "en"
+
+
+# ---- PR32 (D): model size default + VAD filtering --------------------------
+
+
+def test_default_model_size_is_medium():
+    """PR32 bumped the default from PR29's "small" to "medium" -- a real
+    accuracy step up for Japanese, still CPU/int8."""
+    recognizer = SpeechRecognizer()
+    assert recognizer.model_size == "medium"
+
+
+def test_vad_filter_enabled_by_default():
+    recognizer = SpeechRecognizer()
+    assert recognizer.vad_filter is True
+
+
+@patch("faster_whisper.WhisperModel")
+def test_vad_filter_can_be_disabled(mock_whisper_model_cls, tmp_path):
+    wav_path = tmp_path / "test.wav"
+    wav_path.write_bytes(b"RIFF....WAVEfmt ")
+
+    mock_model = MagicMock()
+    mock_model.transcribe.return_value = ([_fake_segment("hi")], MagicMock())
+    mock_whisper_model_cls.return_value = mock_model
+
+    recognizer = SpeechRecognizer(vad_filter=False)
+    recognizer.transcribe_file(wav_path)
+
+    _args, kwargs = mock_model.transcribe.call_args
+    assert kwargs.get("vad_filter") is False

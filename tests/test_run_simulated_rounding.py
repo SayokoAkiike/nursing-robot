@@ -160,6 +160,36 @@ def test_audio_file_missing_raises_before_any_api_call(robot_storage):
         )
 
 
+def test_speech_model_size_env_var_override(robot_storage, monkeypatch):
+    """PR32: SPEECH_MODEL_SIZE lets a disk/bandwidth-constrained machine
+    override the "medium" default without a code change."""
+    monkeypatch.setenv("SPEECH_MODEL_SIZE", "small")
+
+    captured_model_size = {}
+
+    class FakeRecognizer:
+        def __init__(self, model_size=None, **kwargs):
+            captured_model_size["value"] = model_size
+
+        def transcribe_file(self, audio_path):
+            return "トイレに行きたいです"
+
+    monkeypatch.setattr(
+        "perception.speech_recognizer.SpeechRecognizer", FakeRecognizer
+    )
+
+    run_rounding(
+        _client(),
+        scenario="rounding_toileting_escalation",
+        nurse_token=NURSE_TOKEN,
+        step_delay=0,
+        auto_ack=True,
+        audio_file=str(DEMO_AUDIO_PATH),
+    )
+
+    assert captured_model_size["value"] == "small"
+
+
 @pytest.mark.skipif(not DEMO_AUDIO_PATH.exists(), reason="perception/audio_demo/toileting_ja.wav not present")
 def test_audio_file_real_transcription_end_to_end(robot_storage):
     """Real faster-whisper, real (espeak-ng-synthesized) demo audio, real

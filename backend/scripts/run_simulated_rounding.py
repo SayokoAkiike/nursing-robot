@@ -161,12 +161,16 @@ def run_rounding(
     nurse_headers = {"x-nurse-token": nurse_token}
 
     if audio_file:
-        from perception.speech_recognizer import SpeechRecognizer
+        from perception.speech_recognizer import DEFAULT_MODEL_SIZE, SpeechRecognizer
         from perception.speech_source import WavFileSpeechSource
 
         _step("TRANSCRIBING AUDIO (offline, faster-whisper)")
         source = WavFileSpeechSource(audio_file)
-        patient_response = SpeechRecognizer().transcribe_file(source.get_path())
+        # PR32: model_size defaults to "medium" (~1.5GB download on first
+        # use) -- override with the SPEECH_MODEL_SIZE env var (e.g. "small",
+        # ~470MB) on a disk/bandwidth-constrained machine.
+        model_size = os.getenv("SPEECH_MODEL_SIZE", DEFAULT_MODEL_SIZE)
+        patient_response = SpeechRecognizer(model_size=model_size).transcribe_file(source.get_path())
         print(f"heard: {patient_response!r}")
         input_mode = "voice"
     else:
