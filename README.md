@@ -101,7 +101,7 @@ flowchart TB
 | マルチロボット対応（配送ワークフローの`robot_id`パラメータ化、ロボット単位のIDLE/BUSYステータス、巡回セッションの担当ロボットへの配送引き継ぎ） | `backend/services/workflow_service.py`, `backend/services/rounding_service.py`, `backend/services/domain_service.py`, `backend/api/routes_requests.py`, `backend/api/routes_domain.py` | ✅ |
 | UIのリアルタイム更新（`st.experimental_fragment(run_every=...)`による部分自動更新、ブロッキングsleepポーリングの撤去） | `ui/patient_request_app/app.py`, `ui/nurse_dashboard/app.py` | ✅ |
 | 実音声認識（faster-whisper、オフライン・ローカル完結、`--audio-file`でWAVファイルを文字起こしして巡回フローに接続） | `perception/speech_source.py`, `perception/speech_recognizer.py`, `backend/scripts/run_simulated_rounding.py` | ✅ |
-| 実姿勢推定・離床検知（MediaPipe Pose、ベッド領域外への離床を連続フレームで確認してから看護師へ直接エスカレーション） | `perception/pose_detector.py`, `backend/services/bed_exit_service.py`, `backend/scripts/run_pose_demo.py`, `backend/scripts/download_pose_model.py` | ✅ |
+| 実姿勢推定・離床検知（MediaPipe Pose、静止位置＋速度/加速度の時系列判定を組み合わせてベッド領域外への離床を連続フレームで確認してから看護師へ直接エスカレーション） | `perception/pose_detector.py`, `backend/services/bed_exit_service.py`, `backend/scripts/run_pose_demo.py`, `backend/scripts/download_pose_model.py` | ✅ |
 | セッション不要の直接エスカレーション（配送エラー・映像検知など、巡回セッションを介さない安全通知の共通経路） | `backend/services/escalation_service.py` (`raise_direct_escalation`) | ✅ |
 | pytest テスト（337件） | `tests/` （API/workflow service/state machine/repositories/verification/perception/vision/analytics/Docker設定/PyBulletシミュレーション/Grafana設定/GUIデモ/巡回ワークフロー/ドメイン登録/マルチロボット/UIリアルタイム更新/音声認識/姿勢推定） | ✅ |
 
@@ -499,6 +499,8 @@ python -m backend.scripts.run_simulated_rounding \
 ### 実姿勢推定・離床検知（`backend/scripts/run_pose_demo.py`、MediaPipe、Phase 4.5）
 
 [MediaPipe Pose Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker)で骨格を推定し、腰のランドマークが設定した「ベッド領域」の外に出たら離床（`fall_risk`）と判定する監視ループ。1フレームのノイズで誤発報しないよう、**`--confirm-frames`（既定5）フレーム連続**で離床判定されて初めて`POST /escalations/vision-report`で看護師へ直接エスカレーションする（巡回セッションを介さない、`source="vision_pose"`の通知）。映像・画像はどこにも保存せず、都度処理して破棄する。
+
+位置判定だけでなく、腰の**速度・加速度**もフレームごとに追跡している（`backend/services/bed_exit_service.py`の`MotionTracker`）。ベッド領域の境界をまたぐ瞬間は1フレームの中に収まらないことがあり、静止画としての位置判定だけでは転倒の瞬間そのものを見逃す場合があるため、急な下方向への動き（既定で1秒あたり正規化座標0.6以上）を検知した時点でも`fall_risk`として扱う。人物が一時的にフレームから消えた場合は動きの履歴をリセットする（別人の再登場を1つの連続した動きと誤認しないため）。`--frame-interval-seconds`（既定0.2秒）でフレーム間隔を調整できる。
 
 初回のみモデルファイルを手動ダウンロードする（faster-whisperと違い自動ダウンロードされない）。
 

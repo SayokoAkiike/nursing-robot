@@ -79,14 +79,29 @@ def test_confirmed_fall_risk_reports_escalation(tmp_path, robot_storage):
 
 def test_intermittent_fall_risk_does_not_reach_confirm_threshold(tmp_path, robot_storage):
     """A single noisy frame between in-bed frames must reset the
-    consecutive counter -- this is the whole point of debouncing."""
+    consecutive counter -- this is the whole point of debouncing.
+
+    Uses a fall_risk position offset only on the x-axis (just outside
+    BED's x_min) at the same y as the in-bed position -- keeps vertical
+    velocity near zero between alternating frames, so this test
+    exercises the confirm_frames debounce specifically, independent of
+    PR33's MotionTracker (which would otherwise also flag the same
+    large, fast alternation as genuine sudden motion -- correctly, but
+    that's a different behavior than this test means to cover)."""
     frame_dir = _make_frame_dir(tmp_path, n_frames=5)
+
+    def _mild_fall_risk_landmarks() -> list[Landmark]:
+        landmarks = [Landmark(0.5, 0.5, 1.0) for _ in range(33)]
+        landmarks[23] = Landmark(0.05, 0.7, 1.0)
+        landmarks[24] = Landmark(0.1, 0.7, 1.0)
+        return landmarks
+
     sequence = [
-        _fall_risk_landmarks(),
+        _mild_fall_risk_landmarks(),
         _in_bed_landmarks(),  # resets the counter
-        _fall_risk_landmarks(),
+        _mild_fall_risk_landmarks(),
         _in_bed_landmarks(),  # resets again
-        _fall_risk_landmarks(),
+        _mild_fall_risk_landmarks(),
     ]
 
     with patch("backend.scripts.run_pose_demo.PoseDetector") as mock_detector_cls:
@@ -121,4 +136,92 @@ def test_all_in_bed_never_reports(tmp_path, robot_storage):
             client=_client(),
         )
 
+    assert result is None
+
+
+# ---- PR33 (C): MotionTracker integration -------------------------------------
+
+
+def test_sudden_vertical_motion_upgrades_static_in_bed_to_fall_risk(tmp_path, robot_storage):
+    """A rapid downward jump between frames -- even while the *first*
+    post-jump frame's static hip position is still technically inside
+    the bed region's box -- must be confirmed as fall_risk once combined
+    with the motion signal. Realistic follow-through: after the fall the
+    person ends up on the floor, outside the bed region entirely, which
+    the static check alone picks up for the remaining confirm_frames --
+    this mirrors how a real fall actually looks (a brief fast motion,
+    then a settled off-bed position), rather than staying suspended
+    exactly at the bed's boundary."""
+    frame_dir = _make_frame_dir(tmp_path, n_frames=5)
+
+    def _landmarks_at(x: float, y: float) -> list[Landmark]:
+        landmarks = [Landmark(0.5, 0.5, 1.0) for _ in range(33)]
+        landmarks[23] = Landmark(x - 0.05, y, 1.0)
+        landmarks[24] = Landmark(x + 0.05, y, 1.0)
+        return landmarks
+
+    # Frame 1: settled in bed. Frame 2: fast jump, but still just inside
+    # BED's box (y=0.95 < y_max=1.0) -- only the motion signal should
+    # catch this one. Frames 3-4: now off the bed entirely (y=1.05) --
+    # the static check alone confirms from here.
+    sequence = [
+        _landmarks_at(0.5, 0.55),
+        _landmarks_at(0.5, 0.95),
+        _landmarks_at(0.5, 1.05),
+        _landmarks_at(0.5, 1.05),
+    ]
+
+    with patch("backend.scripts.run_pose_demo.PoseDetector") as mock_detector_cls:
+        mock_detector = mock_detector_cls.return_value
+        mock_detector.detect.side_effect = sequence
+
+        result = run(
+            source_spec=str(frame_dir),
+            bed_region=BED,
+            room="203",
+            patient_id="PATIENT_A_ROOM_203",
+            confirm_frames=3,
+            client=_client(),
+        )
+
+    assert result is not None
+    assert result["status"] == "PENDING"
+
+
+def test_gap_in_tracking_resets_motion_history(tmp_path, robot_storage):
+    """No person detected for a frame must reset the motion trace --
+    otherwise a person leaving and a *different*, unrelated re-entry
+    could be misread as one continuous fast motion between the last
+    seen position and the new one."""
+    frame_dir = _make_frame_dir(tmp_path, n_frames=5)
+
+    def _no_person() -> None:
+        return None
+
+    def _in_bed_at(y: float) -> list[Landmark]:
+        landmarks = [Landmark(0.5, 0.5, 1.0) for _ in range(33)]
+        landmarks[23] = Landmark(0.45, y, 1.0)
+        landmarks[24] = Landmark(0.55, y, 1.0)
+        return landmarks
+
+    # A big vertical gap, but with a "nobody detected" frame in between --
+    # should NOT be read as continuous motion.
+    sequence = [_in_bed_at(0.55), _no_person(), _in_bed_at(0.95), _in_bed_at(0.95), _in_bed_at(0.95)]
+
+    with patch("backend.scripts.run_pose_demo.PoseDetector") as mock_detector_cls:
+        mock_detector = mock_detector_cls.return_value
+        mock_detector.detect.side_effect = sequence
+
+        result = run(
+            source_spec=str(frame_dir),
+            bed_region=BED,
+            room="203",
+            patient_id="PATIENT_A_ROOM_203",
+            confirm_frames=3,
+            client=_client(),
+        )
+
+    # Both are within BED's y-range, so no static fall_risk either --
+    # confirms the motion reset actually took effect (result should be
+    # None, not an escalation from a phantom velocity spike).
     assert result is None
