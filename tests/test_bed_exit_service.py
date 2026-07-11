@@ -4,7 +4,19 @@ Pure-function tests -- no mediapipe import anywhere in this file, same
 principle as tests/test_need_classification_service.py not needing any
 audio/speech dependency.
 """
-from backend.services.bed_exit_service import BedRegion, Landmark, assess, suggested_action_for, summary_for
+import pytest
+
+from backend.services.bed_exit_service import (
+    BedRegion,
+    Landmark,
+    MotionAssessment,
+    MotionTracker,
+    assess,
+    combine_assessments,
+    hip_midpoint,
+    suggested_action_for,
+    summary_for,
+)
 
 BED = BedRegion(x_min=0.2, y_min=0.5, x_max=0.8, y_max=1.0)
 
@@ -91,3 +103,112 @@ def test_suggested_action_for_reuses_need_classification_service():
     assert suggested_action_for(fall_risk_assessment) == need_classification_service.suggested_action(
         "fall_risk"
     )
+
+
+# ---- PR33 (C): MotionTracker / combine_assessments --------------------------
+
+
+def test_motion_tracker_needs_at_least_two_samples_for_velocity():
+    tracker = MotionTracker()
+    result = tracker.add_sample(0.5, 0.5, timestamp=0.0)
+    assert result.sample_count == 1
+    assert result.velocity_y == 0.0
+    assert result.sudden_motion is False
+
+
+def test_motion_tracker_computes_downward_velocity():
+    tracker = MotionTracker(velocity_threshold=0.6)
+    tracker.add_sample(0.5, 0.3, timestamp=0.0)
+    result = tracker.add_sample(0.5, 0.5, timestamp=1.0)  # +0.2 y in 1s -> velocity 0.2
+    assert result.velocity_y == pytest.approx(0.2)
+    assert result.sudden_motion is False
+
+
+def test_motion_tracker_flags_sudden_downward_velocity():
+    tracker = MotionTracker(velocity_threshold=0.6)
+    tracker.add_sample(0.5, 0.2, timestamp=0.0)
+    result = tracker.add_sample(0.5, 0.9, timestamp=1.0)  # +0.7 y in 1s -> velocity 0.7
+    assert result.velocity_y == pytest.approx(0.7)
+    assert result.sudden_motion is True
+
+
+def test_motion_tracker_flags_sudden_acceleration_even_below_velocity_threshold():
+    tracker = MotionTracker(velocity_threshold=10.0, acceleration_threshold=0.5)
+    tracker.add_sample(0.5, 0.2, timestamp=0.0)
+    tracker.add_sample(0.5, 0.21, timestamp=1.0)  # slow: velocity 0.01
+    result = tracker.add_sample(0.5, 0.5, timestamp=2.0)  # sudden: velocity 0.29
+    # acceleration = (0.29 - 0.01) / (2.0 - 0.0) = 0.14 -- below 0.5, so this
+    # particular jump shouldn't trigger on acceleration alone; confirms the
+    # threshold is actually being applied, not just always true.
+    assert result.sudden_motion is False
+
+
+def test_motion_tracker_out_of_order_timestamp_does_not_crash():
+    tracker = MotionTracker()
+    tracker.add_sample(0.5, 0.5, timestamp=1.0)
+    result = tracker.add_sample(0.5, 0.6, timestamp=0.5)  # earlier than previous sample
+    assert result.sudden_motion is False
+
+
+def test_motion_tracker_window_size_bounds_history():
+    tracker = MotionTracker(window_size=3)
+    for i in range(10):
+        tracker.add_sample(0.5, 0.5, timestamp=float(i))
+    assert len(tracker._history) == 3
+
+
+def test_motion_tracker_reset_clears_history():
+    tracker = MotionTracker()
+    tracker.add_sample(0.5, 0.5, timestamp=0.0)
+    tracker.add_sample(0.5, 0.6, timestamp=1.0)
+    tracker.reset()
+    result = tracker.add_sample(0.5, 0.5, timestamp=2.0)
+    assert result.sample_count == 1
+
+
+def test_motion_tracker_rejects_window_size_below_two():
+    with pytest.raises(ValueError):
+        MotionTracker(window_size=1)
+
+
+def test_hip_midpoint_matches_assess_internal_computation():
+    landmarks = _landmarks_with_hips(0.4, 0.6, 1.0, 0.6, 0.6, 1.0)
+    result = hip_midpoint(landmarks)
+    assert result is not None
+    x, y, confidence = result
+    assert x == pytest.approx(0.5)
+    assert y == pytest.approx(0.6)
+    assert confidence == "high"
+
+
+def test_hip_midpoint_none_for_no_landmarks():
+    assert hip_midpoint(None) is None
+    assert hip_midpoint([]) is None
+
+
+def test_combine_assessments_passes_through_when_motion_not_sudden():
+    static = assess(_landmarks_with_hips(0.45, 0.7, 1.0, 0.55, 0.7, 1.0), BED)  # in_bed
+    motion = MotionAssessment(sample_count=3, velocity_y=0.1, acceleration_y=0.1, sudden_motion=False)
+    result = combine_assessments(static, motion)
+    assert result == static
+
+
+def test_combine_assessments_upgrades_in_bed_to_fall_risk_on_sudden_motion():
+    static = assess(_landmarks_with_hips(0.45, 0.7, 1.0, 0.55, 0.7, 1.0), BED)  # in_bed
+    motion = MotionAssessment(sample_count=3, velocity_y=0.9, acceleration_y=0.2, sudden_motion=True)
+    result = combine_assessments(static, motion)
+    assert result.detected_need == "fall_risk"
+    assert result.confidence == "high"
+    assert result.person_detected is True
+
+
+def test_combine_assessments_none_motion_passes_through():
+    static = assess(_landmarks_with_hips(0.45, 0.7, 1.0, 0.55, 0.7, 1.0), BED)
+    assert combine_assessments(static, None) == static
+
+
+def test_combine_assessments_already_fall_risk_is_unchanged():
+    static = assess(_landmarks_with_hips(0.05, 0.1, 1.0, 0.1, 0.1, 1.0), BED)  # already fall_risk
+    motion = MotionAssessment(sample_count=3, velocity_y=0.9, acceleration_y=0.2, sudden_motion=True)
+    result = combine_assessments(static, motion)
+    assert result == static

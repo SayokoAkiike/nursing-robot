@@ -9,6 +9,14 @@ consecutive fall_risk frames before reporting anything (same debounce
 principle `perception/qr_detector.py`'s StableQRDetector uses for QR
 codes) -- one noisy frame should never trigger a nurse escalation.
 
+PR33 (C): each frame's hip position is also fed into a `MotionTracker`
+(velocity/acceleration across a short rolling window), and the two
+signals are combined (`combine_assessments()`) -- a static "hip is
+outside the bed region" check alone can miss a fall fast enough that no
+single sampled frame's position looks unambiguously outside the bed;
+the *speed* of the motion is a second, independent tell. See
+bed_exit_service.py's PR33 section comment for the full reasoning.
+
 Never records video/images anywhere -- frames are processed one at a
 time and discarded; only the resulting escalation (room, patient_id,
 summary text) is ever sent anywhere, via
@@ -43,7 +51,15 @@ import sys
 
 import httpx
 
-from backend.services.bed_exit_service import BedRegion, assess, suggested_action_for, summary_for
+from backend.services.bed_exit_service import (
+    BedRegion,
+    MotionTracker,
+    assess,
+    combine_assessments,
+    hip_midpoint,
+    suggested_action_for,
+    summary_for,
+)
 from perception.camera_source import open_source
 from perception.pose_detector import PoseDetector
 
@@ -67,6 +83,7 @@ def run(
     confirm_frames: int = 5,
     max_frames: "int | None" = None,
     client: "httpx.Client | None" = None,
+    frame_interval_seconds: float = 0.2,
 ) -> "dict | None":
     """Runs the monitoring loop; returns the raised escalation dict, or
     None if the source was exhausted (or `max_frames` reached) without a
@@ -76,9 +93,23 @@ def run(
     tests); if omitted, a real HTTP client targeting `base_url` is
     created and closed automatically -- same pattern
     `perception.run_perception.run()` uses for VerificationClient.
+
+    `frame_interval_seconds` (PR33/C): the assumed time between
+    processed frames, used to timestamp `MotionTracker` samples --
+    deliberately NOT `time.monotonic()`. A video-file or image-directory
+    `--source` gets read as fast as disk I/O allows, which has nothing
+    to do with the real camera frame rate the footage was captured at;
+    using wall-clock time there would make velocity/acceleration wildly
+    overestimated (and make this function's behavior depend on how fast
+    the machine running it happens to be, which is also why the mocked
+    test suite needs this to be deterministic). Default 0.2s (~5fps)
+    assumes a monitoring loop sampling at a modest cadence, not
+    processing every frame of a 30fps camera; pass the real interval for
+    a `--source` where one is known.
     """
     detector = PoseDetector(model_path)
     source = open_source(source_spec)
+    motion_tracker = MotionTracker()
 
     consecutive_fall_risk = 0
     frame_count = 0
@@ -86,17 +117,36 @@ def run(
         for frame in source.frames():
             frame_count += 1
             landmarks = detector.detect(frame)
-            assessment = assess(landmarks, bed_region)
+            static_assessment = assess(landmarks, bed_region)
+
+            hip = hip_midpoint(landmarks)
+            if hip is None:
+                # Nobody clearly visible this frame -- don't let a gap
+                # in tracking manufacture a fake velocity spike once the
+                # person reappears; start the motion trace over.
+                motion_tracker.reset()
+                motion = None
+            else:
+                hip_x, hip_y, _confidence = hip
+                timestamp = frame_count * frame_interval_seconds
+                motion = motion_tracker.add_sample(hip_x, hip_y, timestamp=timestamp)
+
+            assessment = combine_assessments(static_assessment, motion)
 
             if assessment.detected_need == "fall_risk":
                 consecutive_fall_risk += 1
             else:
                 consecutive_fall_risk = 0
 
+            motion_note = (
+                f" velocity_y={motion.velocity_y:.2f} sudden_motion={motion.sudden_motion}"
+                if motion is not None
+                else ""
+            )
             print(
                 f"[frame {frame_count}] person_detected={assessment.person_detected} "
                 f"in_bed={assessment.in_bed} confidence={assessment.confidence} "
-                f"consecutive_fall_risk={consecutive_fall_risk}"
+                f"consecutive_fall_risk={consecutive_fall_risk}{motion_note}"
             )
 
             if consecutive_fall_risk >= confirm_frames:
@@ -148,6 +198,12 @@ def main() -> None:
     parser.add_argument("--base-url", default=os.getenv("PRECARE_BASE_URL", "http://localhost:8000"))
     parser.add_argument("--confirm-frames", type=int, default=5)
     parser.add_argument("--max-frames", type=int, default=None)
+    parser.add_argument(
+        "--frame-interval-seconds",
+        type=float,
+        default=0.2,
+        help="Assumed time between processed frames, for MotionTracker's velocity calculation (PR33/C)",
+    )
     args = parser.parse_args()
 
     try:
@@ -166,6 +222,7 @@ def main() -> None:
             base_url=args.base_url,
             confirm_frames=args.confirm_frames,
             max_frames=args.max_frames,
+            frame_interval_seconds=args.frame_interval_seconds,
         )
     except (FileNotFoundError, httpx.HTTPError) as exc:
         print(f"run_pose_demo failed: {exc}", file=sys.stderr)
