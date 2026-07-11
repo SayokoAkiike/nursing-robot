@@ -43,3 +43,15 @@ pytest-cov==7.1.0
 # Docker config validation (PR13) -- tests/test_docker_config.py parses
 # docker-compose.yml
 PyYAML==6.0.2
+
+# Offline speech recognition for the rounding workflow (PR29). Model
+# weights download once from Hugging Face on first use, then run fully
+# offline/local (CPU, int8) -- no audio ever leaves the machine.
+faster-whisper==1.2.1
+
+# Optional, local-only: live microphone input for
+# perception/speech_source.py's MicrophoneSpeechSource. Not required for
+# WAV-file-based transcription (the default, and the only mode that works
+# in Codespaces/CI, which have no audio input device). Uncomment to try
+# live mic recording on a machine that has one:
+# sounddevice==0.4.7
