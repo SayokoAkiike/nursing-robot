@@ -548,6 +548,19 @@ python -m backend.scripts.run_pose_demo --source /tmp/test_frames --room 203 --p
 
 `llama-cpp-python`は`torch`に依存しない軽量なバインディングだが、**PyPIにプリビルドwheelが無く、`pip install`のたびにC++バックエンド（llama.cpp本体）をソースからビルドする**。数分かかることがあるが、フリーズしているわけではない。GGUFモデル本体は初回の実際の分類実行時にHugging Faceから別途ダウンロードされる（`faster-whisper`・`sentence-transformers`と同じ、初回のみの自動ダウンロード方式）。
 
+**レイテンシの実測**（`backend/scripts/benchmark_classification_chain.py`）：3段階とも「動くこと」は個別に確認済みだったが、「3段階すべて外れた場合に合計何秒かかるか」は未計測だった。これは実際の巡回会話で一番起きやすいケース（患者の発言が曖昧で、どの段階も自信を持って分類できない）が、同時に一番遅いケースでもあるため、計測しておく価値がある。
+
+```bash
+# 各段階のモデルを一度ダウンロード済みの状態で実行すること
+# （初回ダウンロード時間を含めると定常状態の速度が分からなくなる）
+python -m backend.scripts.benchmark_classification_chain
+
+# llama-cpp-pythonが未ビルドの環境ではLLM段階だけ飛ばせる
+python -m backend.scripts.benchmark_classification_chain --skip-llm
+```
+
+キーワード段階・埋め込み段階（初回ロード＋定常状態）・LLM段階（初回ロード＋定常状態）・3段階フル通過の合計時間を、それぞれミリ秒単位で標準出力に表示する。
+
 ### エスカレーションパターンの異常検知（`GET /analytics/escalation-anomalies`、Phase 4.5）
 
 当初「将来の転倒リスクを予測するスコアリング」として構想されていた機能だが、それには実際の転倒（アウトカム）の正解ラベルが必要で、合成デモデータしか無いこのプロトタイプでは原理的に作れない（合成データ生成に使ったルール自体をノイズ付きで再学習するだけになり、現実の予測精度は保証されない）。そのため、ラベル不要の**教師なし異常検知**として実装している：「この患者の直近のエスカレーションパターンは、他の患者と比べて統計的に外れているか」を`scikit-learn`の`IsolationForest`で判定する（患者ごとのエスカレーション件数・URGENT件数の割合・平均優先度・平均ack時間を特徴量として使用）。
