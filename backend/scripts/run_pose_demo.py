@@ -84,6 +84,7 @@ def run(
     max_frames: "int | None" = None,
     client: "httpx.Client | None" = None,
     frame_interval_seconds: float = 0.2,
+    robot_token: str = "",
 ) -> "dict | None":
     """Runs the monitoring loop; returns the raised escalation dict, or
     None if the source was exhausted (or `max_frames` reached) without a
@@ -168,6 +169,7 @@ def run(
     try:
         response = active_client.post(
             "/escalations/vision-report",
+            headers={"x-robot-token": robot_token},
             json={
                 "room": room,
                 "patient_id": patient_id,
@@ -204,7 +206,16 @@ def main() -> None:
         default=0.2,
         help="Assumed time between processed frames, for MotionTracker's velocity calculation (PR33/C)",
     )
+    parser.add_argument("--robot-token", default=os.getenv("ROBOT_TOKEN", ""))
     args = parser.parse_args()
+
+    if not args.robot_token:
+        raise SystemExit(
+            "ROBOT_TOKEN is required (set --robot-token or the ROBOT_TOKEN env "
+            "var) -- POST /escalations/vision-report is robot-authenticated "
+            "(PR35 follow-up); required upfront so a long monitoring run "
+            "doesn't fail only once it finally has something to report."
+        )
 
     try:
         bed_region = _parse_bed_region(args.bed_region)
@@ -223,6 +234,7 @@ def main() -> None:
             confirm_frames=args.confirm_frames,
             max_frames=args.max_frames,
             frame_interval_seconds=args.frame_interval_seconds,
+            robot_token=args.robot_token,
         )
     except (FileNotFoundError, httpx.HTTPError) as exc:
         print(f"run_pose_demo failed: {exc}", file=sys.stderr)

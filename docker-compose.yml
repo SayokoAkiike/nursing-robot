@@ -24,6 +24,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://precare:precare@db:5432/precare
       NURSE_TOKEN: ${NURSE_TOKEN:-precare-dev-token-2026}
+      ROBOT_TOKEN: ${ROBOT_TOKEN:-precare-dev-robot-token-2026}
       ALLOWED_ORIGINS: http://localhost:8501,http://localhost:8502
     depends_on:
       db:

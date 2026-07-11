@@ -506,6 +506,8 @@ python -m backend.scripts.run_simulated_rounding \
 
 位置判定だけでなく、腰の**速度・加速度**もフレームごとに追跡している（`backend/services/bed_exit_service.py`の`MotionTracker`）。ベッド領域の境界をまたぐ瞬間は1フレームの中に収まらないことがあり、静止画としての位置判定だけでは転倒の瞬間そのものを見逃す場合があるため、急な下方向への動き（既定で1秒あたり正規化座標0.6以上）を検知した時点でも`fall_risk`として扱う。人物が一時的にフレームから消えた場合は動きの履歴をリセットする（別人の再登場を1つの連続した動きと誤認しないため）。`--frame-interval-seconds`（既定0.2秒）でフレーム間隔を調整できる。
 
+`POST /escalations/vision-report`は`x-robot-token`ヘッダーによる認証が必要（`ROBOT_TOKEN`、PR35のフォローアップで追加）。`/rounding/*`の各エンドポイントは未認証のままだが、これは巡回セッションの状態遷移ゲート自体が正規の手順（`detect-patient`→`start-interaction`→`classify-need`と順番に踏まないとエスカレーションまで到達できない）を強制しているため。一方`vision-report`は状態遷移を経ないステートレスな単発POSTで、そのままにしておくと誰でもAPIに到達できれば偽のfall_riskアラートを看護師ダッシュボードに流し込める（アラート疲れを引き起こす、安全システムとして許容できない失敗モード）。そのため`vision-report`だけは`NURSE_TOKEN`とは別の`ROBOT_TOKEN`で個別に保護している。
+
 初回のみモデルファイルを手動ダウンロードする（faster-whisperと違い自動ダウンロードされない）。
 
 ```bash
@@ -519,7 +521,8 @@ python -m backend.scripts.run_pose_demo \
   --source webcam:0 \
   --room 203 --patient-id PATIENT_A_ROOM_203 \
   --bed-region 0.2,0.5,0.8,1.0 \
-  --base-url http://localhost:8000
+  --base-url http://localhost:8000 \
+  --robot-token $ROBOT_TOKEN
 ```
 
 Webカメラはローカルマシン限定（Codespacesにはカメラがない）。Codespaces上での動作確認は静止画ディレクトリで代用できる：
@@ -530,7 +533,7 @@ python3 -c "
 import cv2, numpy as np
 cv2.imwrite('/tmp/test_frames/frame_001.png', np.zeros((480,640,3), dtype=np.uint8))
 "
-python -m backend.scripts.run_pose_demo --source /tmp/test_frames --room 203 --patient-id PATIENT_A_ROOM_203 --bed-region 0.2,0.5,0.8,1.0 --confirm-frames 1
+python -m backend.scripts.run_pose_demo --source /tmp/test_frames --room 203 --patient-id PATIENT_A_ROOM_203 --bed-region 0.2,0.5,0.8,1.0 --confirm-frames 1 --robot-token $ROBOT_TOKEN
 ```
 
 ### 要望分類の3段構え（キーワード → 埋め込み → ローカルLLM、Phase 4.5）
@@ -596,7 +599,7 @@ PyBulletのGUIウィンドウが開き、ドック位置からベッドサイド
 | POST | `/rounding/{id}/require-delivery` | - | 配送フローへ接続（既存の配送ワークフローに合流） |
 | GET | `/escalations` | - | エスカレーション一覧（PENDING優先） |
 | GET | `/escalations/{id}` | - | エスカレーション詳細 |
-| POST | `/escalations/vision-report` | - | 映像検知（離床等）による直接エスカレーション |
+| POST | `/escalations/vision-report` | 🔒(robot) | 映像検知（離床等）による直接エスカレーション |
 | POST | `/escalations/{id}/ack` | 🔒 | 看護師確認 |
 | GET | `/analytics/rounding-summary` | - | 巡回ワークフローの件数系集計 |
 | GET | `/analytics/escalation-breakdown` | - | エスカレーションのpriority/need/status別内訳 |
@@ -606,7 +609,7 @@ PyBulletのGUIウィンドウが開き、ドック位置からベッドサイド
 | GET | `/robots` | - | ロボット一覧（各ロボットに`status`＝IDLE/BUSYを含む） |
 | GET | `/wards` | - | 病棟一覧（部屋→ベッド→入居患者のネスト構造） |
 
-🔒 = x-nurse-token ヘッダー必須
+🔒 = `x-nurse-token`ヘッダー必須（🔒(robot)は`x-robot-token`ヘッダー必須）
 
 ---
 

@@ -17,6 +17,22 @@ load_dotenv()
 class Settings:
     def __init__(self) -> None:
         self.nurse_token: str = os.getenv("NURSE_TOKEN", "")
+        # PR35 follow-up: separate from NURSE_TOKEN -- a robot/sensor is
+        # a different actor than a nurse, and POST /escalations/vision-report
+        # is unlike /rounding/* (which is unauthenticated but gated by a
+        # valid session's state machine transitions -- you cannot just
+        # spam an escalation without first legitimately progressing a
+        # session through detect-patient/start-interaction/classify-need).
+        # vision-report has no such state gating: it is a stateless,
+        # one-shot POST that creates a real URGENT nurse_escalations row
+        # directly. Left unauthenticated, anyone who can reach this API
+        # could flood the nurse dashboard with fabricated fall-risk
+        # alerts -- exactly the "alert fatigue" failure mode a real
+        # deployment of a safety system cannot afford. See
+        # backend/api/routes_analytics.py's escalation-anomalies for an
+        # unrelated example of the same "don't let noise erode trust in
+        # real signals" principle applied elsewhere in this codebase.
+        self.robot_token: str = os.getenv("ROBOT_TOKEN", "")
         self.allowed_origins: list[str] = os.getenv(
             "ALLOWED_ORIGINS", "http://localhost:8501,http://localhost:8502"
         ).split(",")
@@ -29,6 +45,13 @@ class Settings:
                 "NURSE_TOKEN is not set. Please define it in your .env file."
             )
         return self.nurse_token
+
+    def require_robot_token(self) -> str:
+        if not self.robot_token:
+            raise RuntimeError(
+                "ROBOT_TOKEN is not set. Please define it in your .env file."
+            )
+        return self.robot_token
 
 
 @lru_cache
