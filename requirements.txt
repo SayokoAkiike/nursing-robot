@@ -1,5 +1,13 @@
 # nursing-robot — Python dependencies
 # GitHub Codespaces / Python 3.10+ で動作確認済み
+
+# PR31: torch (a sentence-transformers dependency) defaults to the CUDA
+# build on PyPI, which pulls several GB of unused nvidia-*/cuda-toolkit
+# packages in a GPU-less environment like Codespaces. This index is
+# listed first so pip prefers its much smaller CPU-only wheels instead.
+# Discovered the hard way: a plain `pip install sentence-transformers`
+# installed ~2GB of CUDA libraries in a Codespace with no GPU at all.
+--extra-index-url https://download.pytorch.org/whl/cpu
  
 # UI
 streamlit==1.35.0
@@ -62,3 +70,14 @@ faster-whisper==1.2.1
 # version constraint of its own (pip's resolver will otherwise happily
 # pull numpy 2.x, which breaks streamlit==1.35.0's numpy<2 requirement).
 mediapipe==0.10.33
+
+# Semantic (embedding-based) fallback for rounding need classification
+# (PR31) -- used only when need_classification_service.py's keyword
+# rules find nothing, see backend/services/semantic_classification_service.py.
+# Offline/self-hosted: pulls in torch (CPU) as a dependency, model
+# weights (~470MB) download once from Hugging Face on first use.
+# torch pinned explicitly to the "+cpu" build tag (only available from
+# the --extra-index-url above) -- otherwise pip's resolver can still
+# pick the default PyPI CUDA build even with that extra index present.
+torch==2.13.0+cpu
+sentence-transformers==5.6.0

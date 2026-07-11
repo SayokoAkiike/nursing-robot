@@ -156,6 +156,38 @@ def start_interaction(session_id: str) -> dict:
     return {"prompt": DEFAULT_PROMPT, "session": _view(session_id)}
 
 
+def _classify_with_semantic_fallback(patient_response: str) -> "need_classification_service.Classification":
+    """Keyword rules first (fast, deterministic, zero ML dependency,
+    unchanged behavior from PR23) -- semantic_classification_service is
+    only consulted when that returns "unknown", and only its result is
+    used if IT found something more specific than "unknown" too.
+
+    PR31: wrapped in try/except deliberately broad (not just ImportError)
+    -- the semantic classifier's first real use downloads a ~470MB model
+    from Hugging Face, so a network hiccup, a missing optional dependency
+    (sentence-transformers isn't in every environment this could run in),
+    or any other failure in that path must degrade to the keyword result
+    rather than making classify_need() -- a safety-relevant step in the
+    rounding workflow -- fail because an accuracy *enhancement* wasn't
+    available. See semantic_classification_service.py's module docstring
+    for the same reasoning stated from that side.
+    """
+    keyword_result = need_classification_service.classify(patient_response)
+    if keyword_result.detected_need != "unknown":
+        return keyword_result
+
+    try:
+        from backend.services.semantic_classification_service import SemanticClassifier
+
+        semantic_result = SemanticClassifier().classify(patient_response)
+    except Exception:
+        return keyword_result
+
+    if semantic_result.detected_need == "unknown":
+        return keyword_result
+    return semantic_result
+
+
 def classify_need(
     session_id: str, patient_response: str, input_mode: str = "simulated"
 ) -> dict:
@@ -170,7 +202,7 @@ def classify_need(
     current = session["status"]
     _advance(session_id, current, "NEED_CLASSIFIED")
 
-    classification = need_classification_service.classify(patient_response)
+    classification = _classify_with_semantic_fallback(patient_response)
     now = datetime.now()
 
     repositories.insert_patient_interaction(
