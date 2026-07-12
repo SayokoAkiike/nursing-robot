@@ -141,3 +141,50 @@ def test_nurse_dashboard_renders_task_row(mock_get):
     assert not at.exception
     assert any("PATIENT_A_ROOM_203" in m.value for m in at.markdown)
     assert any(b.label == "Release kit" for b in at.button)
+
+
+@patch("ui.common.api_client.requests.get")
+def test_nurse_dashboard_log_table_survives_an_all_none_column(mock_get):
+    """Regression test for a real crash found in CI (not reproducible in
+    every environment -- dependent on exactly which pyarrow version a
+    fresh `pip install` resolves): rounding-workflow log rows leave
+    delivery-only fields (request/kit/previous_state/next_state/result)
+    entirely None, and delivery-workflow rows leave rounding-only fields
+    None the other way -- a column that ends up *entirely* None across
+    every row becomes an Arrow null-typed column when converted for
+    st.dataframe(), which segfaulted pyarrow outright (not a catchable
+    Python exception) in GitHub Actions' resolved pyarrow version. This
+    log batch is built so multiple columns (result, message) are all-None
+    across every row, on purpose -- the fix (render_log()'s .fillna(""))
+    means this must render without exception regardless of which
+    pyarrow version is actually installed wherever this test runs."""
+    rounding_only_logs = [
+        {
+            "timestamp": "2026-07-10T00:00:00",
+            "event_type": "PATIENT_DETECTED",
+            "patient_id": "PATIENT_A_ROOM_203",
+            "request": None,
+            "kit": None,
+            "previous_state": "ROUNDING",
+            "next_state": "PATIENT_DETECTED",
+            "result": None,
+            "message": None,
+        },
+        {
+            "timestamp": "2026-07-10T00:01:00",
+            "event_type": "NEED_CLASSIFIED",
+            "patient_id": "PATIENT_A_ROOM_203",
+            "request": None,
+            "kit": None,
+            "previous_state": "INTERACTION_STARTED",
+            "next_state": "NEED_CLASSIFIED",
+            "result": None,
+            "message": None,
+        },
+    ]
+    mock_get.side_effect = lambda url, *a, **kw: (
+        _mock_response(rounding_only_logs) if url.endswith("/logs") else _mock_response([])
+    )
+    at = AppTest.from_file(NURSE_APP)
+    at.run(timeout=20)
+    assert not at.exception
