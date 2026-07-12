@@ -1,0 +1,28 @@
+# nursing-robot — public demo deployment (Streamlit Community Cloud)
+#
+# Deliberately NOT the same requirements.txt used for local/Codespaces
+# development. That file installs every ML dependency this project has
+# (torch, mediapipe, llama-cpp-python, sentence-transformers) even though
+# none of those are imported at module import time anywhere in backend/ --
+# every one of them is lazily imported inside a function body (see e.g.
+# perception/speech_recognizer.py's SpeechRecognizer._get_model()), a
+# pattern established specifically so an optional ML tier being
+# unavailable degrades gracefully instead of crashing. This demo takes
+# advantage of exactly that: none of those packages are installed here, so
+# rounding_service._classify_with_ml_fallbacks()'s semantic/LLM tiers raise
+# ImportError, get caught by its own try/except, and the demo silently runs
+# keyword-classification only -- no separate feature flag needed.
+#
+# Skipping torch/mediapipe/llama-cpp-python here isn't just about install
+# speed (though llama-cpp-python alone compiles from source and takes
+# several minutes, see the main requirements.txt's own note) -- it's
+# necessary to fit Streamlit Community Cloud's free-tier memory limit.
+streamlit==1.35.0
+fastapi==0.111.0
+uvicorn==0.30.1
+SQLAlchemy==2.0.51
+alembic==1.18.5
+requests==2.32.3
+httpx==0.27.0
+python-dotenv==1.0.1
+pandas==2.2.2
