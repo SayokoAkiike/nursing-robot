@@ -2,8 +2,7 @@
 
 [![pytest](https://github.com/SayokoAkiike/nursing-robot/actions/workflows/pytest.yml/badge.svg?branch=main)](https://github.com/SayokoAkiike/nursing-robot/actions/workflows/pytest.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](#license)
-<!-- デプロイ後、下の行のURLを実際のデプロイURLに差し替える（それまではコメントアウトのまま） -->
-<!-- [![Live Demo](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://xxxxx.streamlit.app) -->
+[![Live Demo](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://nursing-robot-oyrvp7rqmyr5zjxclibdft.streamlit.app)
 
 **看護現場の転倒予防を目的とした、安全制約つきベッドサイド見守りロボットのソフトウェアMVP。**
 > 物理ロボットは実装していない、ソフトウェアのみのプロトタイプです。医療機器ではありません。
@@ -46,7 +45,7 @@ pytest tests/ -v
 
 `DATABASE_URL`を`.env`で指定しない場合、`data/precare.db`のSQLiteファイルにフォールバックする（追加セットアップ不要）。API起動後は `http://localhost:8000/docs` でSwagger UI（全エンドポイントを実際に叩けるインタラクティブなリファレンス）が使える。
 
-**手元でセットアップせずブラウザだけで触ってみたい場合**は、`demo/streamlit_app.py` + `demo/pages/` が1クリックでデプロイできる公開デモ構成になっている。自分のStreamlit Community Cloudアカウントにデプロイする手順は [docs/DEMO.md](docs/DEMO.md) を参照（無料、GitHubアカウントのみで数分）。
+**手元でセットアップせずブラウザだけで触ってみたい場合**は、[ライブデモ](https://nursing-robot-oyrvp7rqmyr5zjxclibdft.streamlit.app)をどうぞ（キーワード分類のみ、ローカルのようなML拡張は無効化した公開sandbox版）。自分のStreamlit Community Cloudアカウントに同じ構成をデプロイする手順は [docs/DEMO.md](docs/DEMO.md) を参照（無料、GitHubアカウントのみで数分）。
 
 <details>
 <summary>初めて動かす場合のチェックリスト（クリックで展開）</summary>
