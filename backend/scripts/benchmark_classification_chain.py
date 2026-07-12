@@ -30,6 +30,13 @@ from __future__ import annotations
 import argparse
 import time
 
+from dotenv import load_dotenv
+
+load_dotenv()  # see run_simulated_rounding.py's identical note -- HF_TOKEN
+# in particular matters here: this script downloads from three separate
+# Hugging Face repos in one run, which is exactly the kind of burst that
+# hits anonymous rate limits (see README's ML fallback chain section).
+
 # Phrases chosen so each one is expected to resolve at a specific tier
 # -- see need_classification_service.py's _RULES / semantic_classification_
 # service.py's EXAMPLE_UTTERANCES for why each lands where it does.

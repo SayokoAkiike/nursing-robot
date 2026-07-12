@@ -50,6 +50,7 @@ import os
 import sys
 
 import httpx
+from dotenv import load_dotenv
 
 from backend.services.bed_exit_service import (
     BedRegion,
@@ -62,6 +63,8 @@ from backend.services.bed_exit_service import (
 )
 from perception.camera_source import open_source
 from perception.pose_detector import PoseDetector
+
+load_dotenv()  # see run_simulated_rounding.py's identical note
 
 DEFAULT_MODEL_PATH = "perception/models/pose_landmarker_lite.task"
 

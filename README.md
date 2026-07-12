@@ -120,6 +120,13 @@ flowchart TB
 
 ## 🚀 Quick Start
 
+> **初めてこのリポジトリを動かす場合のチェックリスト**：以下はどれも「使うときになって初めて気づく」タイプの落とし穴で、各機能のセクションに個別に書かれているが見落としやすいため、まとめておく。
+>
+> - **ディスク容量**：ML機能（音声認識・姿勢推定・埋め込み分類・ローカルLLM）を全部試すなら、依存パッケージ＋モデル重みで**合計3〜4GB程度**の空き容量を見ておくこと。特に`sentence-transformers`は`torch`を引き込む（`requirements.txt`の`--extra-index-url`指定でCPU専用ビルドに固定済みだが、それでも数百MB〜1GB程度は使う）
+> - **`llama-cpp-python`のビルド時間**：PyPIにプリビルドwheelが無く、`pip install`のたびにC++バックエンドをソースからビルドする。数分（環境によっては10分超）かかるが、フリーズしているわけではない
+> - **姿勢推定を使うなら、OSレベルの共有ライブラリが2つ追加で必要**：`libGLESv2.so.2`/`libEGL.so.1`（Codespacesの標準イメージには入っていない）。下の「ローカル実行」セクション参照
+> - **`HF_TOKEN`を設定しておくことを強く推奨**：音声認識・埋め込み分類・ローカルLLM・姿勢推定モデルは全てHugging Faceから初回ダウンロードする。未認証（匿名）アクセスはレート制限が低く、特に`benchmark_classification_chain.py`のように複数モデルを一度に触るとすぐ`429 Too Many Requests`にぶつかる。`.env.example`にコメント付きで場所を書いてあるので、[https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) で無料アカウント・Read権限トークンを発行し、`.env`に設定しておく（`cp .env.example .env`した後、`HF_TOKEN=`の行のコメントを外して値を入れる）
+
 ### ローカル実行（venv、SQLiteフォールバック）
 
 ```bash
@@ -548,7 +555,7 @@ python -m backend.scripts.run_pose_demo --source /tmp/test_frames --room 203 --p
 
 `llama-cpp-python`は`torch`に依存しない軽量なバインディングだが、**PyPIにプリビルドwheelが無く、`pip install`のたびにC++バックエンド（llama.cpp本体）をソースからビルドする**。数分かかることがあるが、フリーズしているわけではない。GGUFモデル本体は初回の実際の分類実行時にHugging Faceから別途ダウンロードされる（`faster-whisper`・`sentence-transformers`と同じ、初回のみの自動ダウンロード方式）。
 
-**レイテンシの実測**（`backend/scripts/benchmark_classification_chain.py`）：3段階とも「動くこと」は個別に確認済みだったが、「3段階すべて外れた場合に合計何秒かかるか」は未計測だった。これは実際の巡回会話で一番起きやすいケース（患者の発言が曖昧で、どの段階も自信を持って分類できない）が、同時に一番遅いケースでもあるため、計測しておく価値がある。
+**レイテンシの実測**（`backend/scripts/benchmark_classification_chain.py`）：3段階とも「動くこと」は個別に確認済みだったが、「3段階すべて外れた場合に合計何秒かかるか」は未計測だった。これは実際の巡回会話で一番起きやすいケース（患者の発言が曖昧で、どの段階も自信を持って分類できない）が、同時に一番遅いケースでもあるため、計測しておく価値がある。このスクリプトは3つのHugging Faceリポジトリに一度にアクセスするため、`HF_TOKEN`未設定だと`429 Too Many Requests`にぶつかりやすい（Quick Startの「初めてこのリポジトリを動かす場合のチェックリスト」参照）。
 
 ```bash
 # 各段階のモデルを一度ダウンロード済みの状態で実行すること

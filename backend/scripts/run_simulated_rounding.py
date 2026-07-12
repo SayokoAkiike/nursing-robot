@@ -40,6 +40,15 @@ import os
 import time
 
 import httpx
+from dotenv import load_dotenv
+
+# Standalone scripts (unlike the FastAPI app, which loads .env via
+# backend/core/config.py) never had .env applied automatically -- found
+# while tracking down why HF_TOKEN set only in .env didn't reach a
+# script's Hugging Face model download. Every backend/scripts/*.py that
+# reads a token/URL via os.getenv() now loads .env explicitly here,
+# before argparse's defaults capture os.getenv() at import/parse time.
+load_dotenv()
 
 DEFAULT_ROOM = "203"
 DEFAULT_PATIENT_ID = "PATIENT_A_ROOM_203"
