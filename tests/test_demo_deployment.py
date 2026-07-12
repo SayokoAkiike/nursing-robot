@@ -29,10 +29,10 @@ import requests
 from streamlit.testing.v1 import AppTest
 
 ENTRY_FILES = [
-    "streamlit_app.py",
-    "pages/1_🛏️_患者用タブレット.py",
-    "pages/2_🩺_看護師ダッシュボード.py",
-    "pages/3_🚶_巡回・要望分類デモ.py",
+    "demo/streamlit_app.py",
+    "demo/pages/1_🛏️_患者用タブレット.py",
+    "demo/pages/2_🩺_看護師ダッシュボード.py",
+    "demo/pages/3_🚶_巡回・要望分類デモ.py",
 ]
 
 
@@ -107,7 +107,7 @@ def test_classification_demo_page_creates_a_real_escalation_a_nurse_can_see():
     up on the nurse dashboard page -- i.e. the two pages genuinely share
     one backend/DB, which is the entire point of running them as one
     Streamlit Cloud deployment instead of two."""
-    demo = AppTest.from_file("pages/3_🚶_巡回・要望分類デモ.py", default_timeout=20)
+    demo = AppTest.from_file("demo/pages/3_🚶_巡回・要望分類デモ.py", default_timeout=20)
     demo.run()
     demo.text_input[0].set_value("トイレに行きたいです").run()
     run_button = next(b for b in demo.button if b.label == "巡回を実行して分類する")
@@ -118,7 +118,7 @@ def test_classification_demo_page_creates_a_real_escalation_a_nurse_can_see():
     assert "toileting" in demo_texts
     assert "エスカレーション" in demo_texts
 
-    nurse = AppTest.from_file("pages/2_🩺_看護師ダッシュボード.py", default_timeout=20)
+    nurse = AppTest.from_file("demo/pages/2_🩺_看護師ダッシュボード.py", default_timeout=20)
     nurse.run()
     assert not nurse.exception
     nurse_texts = " ".join(m.value for m in nurse.markdown)

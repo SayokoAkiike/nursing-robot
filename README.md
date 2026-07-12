@@ -46,7 +46,7 @@ pytest tests/ -v
 
 `DATABASE_URL`を`.env`で指定しない場合、`data/precare.db`のSQLiteファイルにフォールバックする（追加セットアップ不要）。API起動後は `http://localhost:8000/docs` でSwagger UI（全エンドポイントを実際に叩けるインタラクティブなリファレンス）が使える。
 
-**手元でセットアップせずブラウザだけで触ってみたい場合**は、`streamlit_app.py` + `pages/` が1クリックでデプロイできる公開デモ構成になっている。自分のStreamlit Community Cloudアカウントにデプロイする手順は [docs/DEMO.md](docs/DEMO.md) を参照（無料、GitHubアカウントのみで数分）。
+**手元でセットアップせずブラウザだけで触ってみたい場合**は、`demo/streamlit_app.py` + `demo/pages/` が1クリックでデプロイできる公開デモ構成になっている。自分のStreamlit Community Cloudアカウントにデプロイする手順は [docs/DEMO.md](docs/DEMO.md) を参照（無料、GitHubアカウントのみで数分）。
 
 <details>
 <summary>初めて動かす場合のチェックリスト（クリックで展開）</summary>
