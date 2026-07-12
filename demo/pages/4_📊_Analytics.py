@@ -105,7 +105,12 @@ try:
         st.write(f"分析対象: {total}人の患者")
         if anomalous:
             st.error(f"{len(anomalous)}人の患者で、統計的に外れたエスカレーションパターンを検知しました。")
-            st.dataframe(pd.DataFrame(anomalous), use_container_width=True)
+            # See ui/nurse_dashboard/app.py's render_log() for why
+            # fillna("") is here -- avg_time_to_ack_seconds is None for
+            # any patient with no acknowledged escalations yet, which
+            # could make that whole column all-null and hit the same
+            # pyarrow crash observed in CI for that other table.
+            st.dataframe(pd.DataFrame(anomalous).fillna(""), use_container_width=True)
         else:
             st.success("統計的な外れ値は検知されませんでした。")
 except Exception as e:

@@ -175,7 +175,24 @@ def main() -> None:
             logs = []
         if logs:
             import pandas as pd
-            st.dataframe(pd.DataFrame(logs[::-1]), use_container_width=True, height=200)
+
+            # Rounding-workflow events (patient_detected, need_classified,
+            # ...) and delivery-workflow events (request_received, verify,
+            # ...) populate different subsets of these columns -- a
+            # column that's None for every row of one event kind and
+            # populated for another isn't unusual here. Found via a real
+            # CI segfault (not reproducible in every environment,
+            # dependent on exactly which pyarrow version a fresh
+            # `pip install` resolves): a column that ends up *entirely*
+            # None becomes an Arrow null-typed column, and converting
+            # that to Arrow for st.dataframe() crashed pyarrow outright
+            # rather than raising a catchable Python exception, in
+            # whatever pyarrow version GitHub Actions' fresh install
+            # picked up. fillna("") means no column can ever end up
+            # all-null, regardless of which pyarrow version resolves --
+            # this is a display-only log table, so losing the
+            # None/NaN-vs-empty-string distinction costs nothing.
+            st.dataframe(pd.DataFrame(logs[::-1]).fillna(""), use_container_width=True, height=200)
         else:
             st.caption("No logs yet.")
 
