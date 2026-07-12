@@ -36,8 +36,12 @@ import argparse
 import os
 import time
 
+from dotenv import load_dotenv
+
 from perception.run_perception import run as run_perception
 from perception.verification_client import VerificationClient, VerificationClientError
+
+load_dotenv()  # see run_simulated_rounding.py's identical note
 
 DEFAULT_PATIENT_ID = "PATIENT_A_ROOM_203"
 DEFAULT_REQUEST_TYPE = "toileting"
