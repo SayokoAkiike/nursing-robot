@@ -33,6 +33,7 @@ ENTRY_FILES = [
     "demo/pages/1_🛏️_患者用タブレット.py",
     "demo/pages/2_🩺_看護師ダッシュボード.py",
     "demo/pages/3_🚶_巡回・要望分類デモ.py",
+    "demo/pages/4_📊_Analytics.py",
 ]
 
 
@@ -82,7 +83,6 @@ def isolated_demo_database(tmp_path_factory):
 
         get_settings.cache_clear()
         db_session.configure_engine()
-        print("TEARDOWN: engine now points at", db_session.get_engine().url, flush=True)
 
 
 def test_backend_bootstrap_starts_a_real_reachable_backend():
@@ -123,3 +123,37 @@ def test_classification_demo_page_creates_a_real_escalation_a_nurse_can_see():
     assert not nurse.exception
     nurse_texts = " ".join(m.value for m in nurse.markdown)
     assert "PATIENT_A_ROOM_203" in nurse_texts
+
+
+def test_analytics_seed_produces_enough_patients_for_anomaly_detection():
+    """Calls demo_seed.seed_anomaly_demo_data() directly rather than
+    through the Analytics page's button -- AppTest + a real st.rerun()
+    immediately after ~25 synchronous HTTP calls proved unreliable in
+    this project's sandbox specifically (intermittent segfaults, not
+    reproducible via direct function calls, and not something this
+    project's own real Streamlit Cloud deployment goes through the same
+    testing harness for anyway). What actually matters -- the seeded
+    data crosses escalation_anomaly_service.MIN_PATIENTS_FOR_ANALYSIS and
+    correctly flags the one deliberate outlier patient -- is fully
+    covered by calling the real functions directly, same as this file's
+    other tests call real API endpoints directly via `requests`."""
+    from ui.common.backend_bootstrap import start_backend
+    from ui.common.demo_seed import seed_anomaly_demo_data
+
+    start_backend()
+    result = seed_anomaly_demo_data()
+    assert len(result["created_patients"]) == 7
+
+    from backend.services.escalation_anomaly_service import analyze
+
+    analysis = analyze()
+    # >= rather than == : other tests in this file (e.g. the classification
+    # demo page test above) share this same module-scoped backend/DB and
+    # may have already created their own patient's escalation data --
+    # what this test actually needs to prove is that *this* seed batch
+    # crossed the analysis threshold and its outlier got flagged, not an
+    # exact count of every patient anyone else in this file happened to
+    # create too.
+    assert analysis["total_patients_analyzed"] >= 7
+    anomalous_ids = {p["patient_id"] for p in analysis["anomalous_patients"]}
+    assert result["outlier_patient_id"] in anomalous_ids
