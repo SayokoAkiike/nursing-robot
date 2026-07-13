@@ -22,6 +22,25 @@ qrcode[pil]==7.4.2
 # Data
 numpy==1.26.4
 pandas==2.2.2
+
+# streamlit==1.35.0's own dependency spec is an unbounded `pyarrow>=7.0`
+# (no upper limit) -- a fresh `pip install` can and does resolve to
+# whatever the latest pyarrow release happens to be at install time,
+# which can be many releases newer than anything streamlit 1.35.0 (mid-
+# 2024) was ever tested against. This is exactly what happened in CI:
+# pip resolved pyarrow==25.0.0, and st.dataframe()'s pandas->Arrow
+# conversion (streamlit/type_util.py's data_frame_to_bytes ->
+# pyarrow.pandas_compat.convert_column) segfaulted the interpreter
+# outright -- not a catchable Python exception -- rendering
+# ui/nurse_dashboard/app.py's log table. Confirmed by streamlit's own
+# newer releases: streamlit==1.51.0's dependency spec explicitly caps
+# `pyarrow>=7.0,<22`, i.e. the Streamlit team itself later added this
+# exact upper bound after 22+ proved incompatible -- streamlit==1.35.0
+# predates that fix and never got it backported. Pinned here to a
+# version from streamlit 1.35.0's actual contemporaneous testing window
+# instead of trusting an unbounded transitive constraint to keep
+# resolving to something that still works.
+pyarrow==14.0.2
  
 # Simulation（CPU動作・GPU不要）
 pybullet==3.2.7
