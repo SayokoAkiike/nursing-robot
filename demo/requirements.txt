@@ -26,3 +26,8 @@ requests==2.32.3
 httpx==0.27.0
 python-dotenv==1.0.1
 pandas==2.2.2
+
+# See requirements.txt's identical pin for the full explanation -- a
+# real CI segfault (streamlit==1.35.0's unbounded pyarrow>=7.0 spec
+# resolving to an incompatible, much newer pyarrow release).
+pyarrow==14.0.2
