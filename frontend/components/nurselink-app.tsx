@@ -9,11 +9,13 @@ import { NurseScreen, type NurseSubTab } from "@/components/nurse/nurse-screen";
 import type { EscalationVm } from "@/components/nurse/escalations-tab";
 import type { PatientOverviewVm } from "@/components/nurse/patients-tab";
 import type { HistoryBucketVm } from "@/components/nurse/robot-history-tab";
+import type { VoiceTurnResult } from "@/components/voice/voice-recorder-panel";
 import {
   HISTORY_BUCKET_DEFS,
   MOOD_LEVELS,
   NURSE_NAME,
   PATIENTS,
+  PRIORITY_META,
   buildEscalation,
   buildHistoryRecordFromRun,
   buildRunEntries,
@@ -196,6 +198,42 @@ export function NurselinkApp() {
     setTimeout(() => setPlayingAudio(false), 1400);
   };
 
+  // ---- Robot patrol: real voice (mic recording via VoiceRecorderPanel) ----
+  const runVoiceTurn = (voiceResult: VoiceTurnResult) => {
+    if (isRunning) return;
+    const patient = PATIENTS.find((p) => p.id === selectedPatientId) ?? PATIENTS[0];
+    const utterance = voiceResult.transcript || "（発話を認識できませんでした）";
+    const result = classify(utterance, null);
+    const entries: ConversationEntry[] = [
+      { kind: "system", text: "ロボットが病室の巡回を開始しました" },
+      { kind: "system", text: `${patient.name}（${patient.room}）を発見しました` },
+      { kind: "robot", text: "体調はいかがですか？" },
+      { kind: "patient", text: utterance, initial: patient.name.charAt(0) },
+      {
+        kind: "classification",
+        category: result.category,
+        priority: result.priority,
+        priorityLabel: PRIORITY_META[result.priority].label,
+        route: result.route,
+        autoEscalated: !!result.autoEscalated,
+      },
+      { kind: "robot-audio", text: voiceResult.responseText },
+      {
+        kind: "complete",
+        text: result.workflow === "delivery" ? "配送ワークフローに接続しました" : "エスカレーションを作成しました",
+      },
+    ];
+
+    setEntriesForRun(entries);
+    setStepRevealCount(entries.length);
+
+    const newEsc = buildEscalation(patient, utterance, result.priority);
+    const newRecord = buildHistoryRecordFromRun(patient.id, utterance, result.priority, entries);
+    setEscalations((s) => [newEsc, ...s]);
+    setConversationHistory((s) => [newRecord, ...s]);
+    refreshNow();
+  };
+
   const revealedEntries = entriesForRun.slice(0, stepRevealCount);
   const lastRobotEntry = [...revealedEntries].reverse().find((e) => e.kind === "robot" || e.kind === "robot-audio") ?? null;
   const lastPatientEntry = [...revealedEntries].reverse().find((e) => e.kind === "patient") ?? null;
@@ -217,6 +255,12 @@ export function NurselinkApp() {
   const sendBedsideQuickRequest = (q: QuickRequest) => {
     addEscalationFromBedside(bedsidePatient, q.phrase, null);
     flashMessage(`「${q.label}」を送信しました。ナースに通知しました。`);
+  };
+
+  const sendBedsideVoiceRequest = (voiceResult: VoiceTurnResult) => {
+    const utterance = voiceResult.transcript || "（発話を認識できませんでした）";
+    addEscalationFromBedside(bedsidePatient, utterance, null);
+    flashMessage(`音声リクエスト「${utterance}」を送信しました。ナースに通知しました。`);
   };
 
   const reportBedsidePain = () => {
@@ -346,6 +390,7 @@ export function NurselinkApp() {
             onSendChat={sendBedsideChat}
             emergencySent={emergencySent}
             onTriggerEmergency={triggerEmergency}
+            onVoiceRequest={sendBedsideVoiceRequest}
           />
         </DeviceFrame>
       )}
@@ -370,6 +415,7 @@ export function NurselinkApp() {
             patientCaptionActive={patientCaptionActive}
             playingAudio={playingAudio}
             onPlayAudio={playAudio}
+            onVoiceTurnResult={runVoiceTurn}
           />
         </DeviceFrame>
       )}

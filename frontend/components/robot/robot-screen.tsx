@@ -3,6 +3,7 @@
 import { useHover } from "@/hooks/use-hover";
 import { ConversationEntries } from "@/components/conversation-entries";
 import { StageTracker } from "@/components/robot/stage-tracker";
+import { VoiceRecorderPanel, type VoiceTurnResult } from "@/components/voice/voice-recorder-panel";
 import type { PatientOption } from "@/components/bedside/bedside-screen";
 import type { ConversationEntry } from "@/lib/types";
 
@@ -24,6 +25,7 @@ export function RobotScreen({
   patientCaptionActive,
   playingAudio,
   onPlayAudio,
+  onVoiceTurnResult,
 }: {
   patients: PatientOption[];
   selectedPatientId: string;
@@ -42,6 +44,7 @@ export function RobotScreen({
   patientCaptionActive: boolean;
   playingAudio: boolean;
   onPlayAudio: () => void;
+  onVoiceTurnResult: (result: VoiceTurnResult) => void;
 }) {
   return (
     <div className="flex flex-col gap-5">
@@ -67,8 +70,10 @@ export function RobotScreen({
           </select>
         </div>
 
-        <TalkButton disabled={isRunning} onClick={onRunPatrol} label={isRunning ? "はなしかけ中…" : "話しかける"} />
+        <TalkButton disabled={isRunning} onClick={onRunPatrol} label={isRunning ? "はなしかけ中…" : "話しかける（デモシナリオ）"} />
       </div>
+
+      <VoiceRecorderPanel label="実際に話しかけてみる（実音声）" onResult={onVoiceTurnResult} />
 
       <div
         className="flex min-h-[520px] min-w-0 flex-col rounded-[10px] border bg-white p-2"
