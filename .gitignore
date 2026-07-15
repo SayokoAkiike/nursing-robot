@@ -37,3 +37,8 @@ htmlcov/
 .env
  
 .venv-*/
+
+# Voice demo (large binaries, should not be committed)
+tools/voicevox_engine/
+.venv/
+backend/scripts/test_output.wav
