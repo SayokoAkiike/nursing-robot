@@ -215,6 +215,52 @@ python -m backend.scripts.reset_demo_data
 
 ---
 
+## 音声デモ（ずんだもん / Gemini Live）を試す
+
+ロボットとの音声対話を、ローカル環境で試すことができます。
+
+### 前提条件
+
+- Python 3.11
+- Gemini APIキー（無料、 https://aistudio.google.com/apikey で取得）
+
+### セットアップ
+
+以下をターミナルにまとめて貼り付けてください。
+
+```bash
+cd /workspaces/nursing-robot
+
+VOICEVOX_DIR="/workspaces/nursing-robot/tools/voicevox_engine"
+if [ ! -f "$VOICEVOX_DIR/run" ]; then
+    mkdir -p "$VOICEVOX_DIR"
+    cd "$VOICEVOX_DIR"
+    wget -q -O voicevox_engine.vvpp "https://github.com/VOICEVOX/voicevox_engine/releases/download/0.25.2/voicevox_engine-linux-cpu-x64-0.25.2.vvpp"
+    unzip -q voicevox_engine.vvpp -d .
+    rm voicevox_engine.vvpp
+    cd /workspaces/nursing-robot
+fi
+
+pip install -q faster-whisper google-generativeai python-dotenv requests
+```
+
+その後、`.env` にGemini APIキーを設定してください。
+
+```bash
+echo 'GEMINI_API_KEY=あなたのキー' >> .env
+```
+
+### 起動・動作確認
+
+```bash
+cd tools/voicevox_engine && ./run --host 0.0.0.0 &
+cd /workspaces/nursing-robot
+
+python backend/scripts/test_zundamon_pipeline.py
+```
+
+テスト用の患者発話（「トイレに行きたいです」）を音声合成 → Whisperで音声認識 → Geminiで応答生成（丁寧語だけど親しみやすいトーン）→ VOICEVOXでずんだもんの声として音声合成、という一連のパイプラインが実行され、`backend/scripts/test_output.wav` に応答音声が保存されます。
 ## License
 
 MIT License
+
