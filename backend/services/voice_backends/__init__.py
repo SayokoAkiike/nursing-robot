@@ -1,4 +1,4 @@
-from .base import VoiceBackend, VoiceTurnResult
+from .base import VoiceBackend, VoiceTurnResult as VoiceTurnResult
 from .zundamon_pipeline import ZundamonPipelineBackend
 from .gemini_live import GeminiLiveBackend
 
