@@ -241,7 +241,7 @@ if [ ! -f "$VOICEVOX_DIR/run" ]; then
     cd /workspaces/nursing-robot
 fi
 
-pip install -q faster-whisper google-generativeai python-dotenv requests
+pip install -q faster-whisper google-generativeai google-genai av python-dotenv requests
 ```
 
 その後、`.env` にGemini APIキーを設定してください。

@@ -76,6 +76,19 @@ PyYAML==6.0.2
 # offline/local (CPU, int8) -- no audio ever leaves the machine.
 faster-whisper==1.2.1
 
+# Gemini API client (PR: voice backend comparison / Gemini Live). The
+# older google-generativeai package (still used by zundamon_pipeline.py's
+# text-only calls) is end-of-life upstream and cannot do Live API
+# audio-to-audio dialog at all -- gemini_live.py needs this package's
+# `google.genai.Client(...).aio.live.connect(...)` for that.
+google-genai==2.11.0
+
+# Already installed transitively via faster-whisper, but declared
+# explicitly since audio_convert.py imports it directly (decodes
+# whatever container the browser/mic hands us into raw PCM for the
+# Gemini Live API) -- same reasoning as the scikit-learn pin below.
+av==18.0.0
+
 # Optional, local-only: live microphone input for
 # perception/speech_source.py's MicrophoneSpeechSource. Not required for
 # WAV-file-based transcription (the default, and the only mode that works
