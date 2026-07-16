@@ -54,7 +54,7 @@ pytest==8.2.2
 fastapi==0.111.0
 uvicorn==0.30.1
 requests==2.32.3
-httpx==0.27.0
+httpx==0.28.1
  
 # Persistence (PR2)
 SQLAlchemy==2.0.51
