@@ -32,7 +32,7 @@ class GeminiLiveBackend(VoiceBackend):
         pcm_input = decode_to_pcm16(audio_input, _INPUT_SAMPLE_RATE)
 
         config = types.LiveConnectConfig(
-            response_modalities=["AUDIO"],
+            response_modalities=[types.Modality.AUDIO],
             system_instruction=_SYSTEM_PROMPT,
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),

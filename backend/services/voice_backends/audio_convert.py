@@ -21,7 +21,7 @@ def decode_to_pcm16(audio_bytes: bytes, sample_rate: int) -> bytes:
         format="s16", layout="mono", rate=sample_rate
     )
     pcm_chunks = []
-    with av.open(io.BytesIO(audio_bytes)) as container:
+    with av.open(io.BytesIO(audio_bytes), mode="r") as container:
         for frame in container.decode(audio=0):
             for resampled in resampler.resample(frame):
                 pcm_chunks.append(resampled.to_ndarray().tobytes())
