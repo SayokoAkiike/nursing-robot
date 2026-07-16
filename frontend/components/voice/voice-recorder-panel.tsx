@@ -1,117 +1,32 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useHover } from "@/hooks/use-hover";
+import { useVoiceRecorder, type VoiceEngine, type VoiceTurnResult } from "@/hooks/use-voice-recorder";
 
-export type VoiceEngine = "ずんだもん" | "Gemini Live";
-
-export type VoiceTurnResult = {
-  transcript: string;
-  responseText: string;
-  audioUrl: string;
-  backendName: string;
-};
-
-type Status = "idle" | "recording" | "processing" | "error";
-
-const PROCESSING_LABELS = [
-  "音声を認識しています…",
-  "応答を生成しています…",
-  "音声を合成しています…",
-];
-
-const PROCESSING_LABEL_INTERVAL_MS = 1300;
+export type { VoiceEngine, VoiceTurnResult };
 
 export function VoiceRecorderPanel({
   label = "音声で伝える",
   onResult,
+  disabled = false,
+  disabledLabel = "処理中…",
 }: {
   label?: string;
   onResult?: (result: VoiceTurnResult) => void;
+  disabled?: boolean;
+  disabledLabel?: string;
 }) {
-  const [engine, setEngine] = useState<VoiceEngine>("ずんだもん");
-  const [status, setStatus] = useState<Status>("idle");
-  const [processingLabel, setProcessingLabel] = useState(PROCESSING_LABELS[0]);
-  const [errorMessage, setErrorMessage] = useState("");
   const [lastResult, setLastResult] = useState<VoiceTurnResult | null>(null);
-
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const labelTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { engine, setEngine, status, processingLabel, errorMessage, toggleRecording } = useVoiceRecorder(
+    (result) => {
+      setLastResult(result);
+      onResult?.(result);
+    },
+  );
   const { hover, hoverHandlers } = useHover();
 
-  useEffect(() => {
-    return () => {
-      if (labelTimerRef.current) clearInterval(labelTimerRef.current);
-      mediaRecorderRef.current?.stream.getTracks().forEach((t) => t.stop());
-    };
-  }, []);
-
-  const submitRecording = async (blob: Blob) => {
-    setStatus("processing");
-    let labelIndex = 0;
-    setProcessingLabel(PROCESSING_LABELS[0]);
-    labelTimerRef.current = setInterval(() => {
-      labelIndex = (labelIndex + 1) % PROCESSING_LABELS.length;
-      setProcessingLabel(PROCESSING_LABELS[labelIndex]);
-    }, PROCESSING_LABEL_INTERVAL_MS);
-
-    try {
-      const form = new FormData();
-      form.append("audio", blob, "recording.webm");
-      form.append("backend", engine);
-      const res = await fetch("/api/voice/respond", { method: "POST", body: form });
-      const body = await res.json();
-      if (!res.ok) {
-        throw new Error(body?.error ?? body?.detail ?? `音声処理に失敗しました（${res.status}）`);
-      }
-      const result: VoiceTurnResult = {
-        transcript: body.transcript,
-        responseText: body.response_text,
-        audioUrl: `data:audio/wav;base64,${body.response_audio_base64}`,
-        backendName: body.backend_name,
-      };
-      setLastResult(result);
-      setStatus("idle");
-      onResult?.(result);
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "音声処理に失敗しました。");
-      setStatus("error");
-    } finally {
-      if (labelTimerRef.current) {
-        clearInterval(labelTimerRef.current);
-        labelTimerRef.current = null;
-      }
-    }
-  };
-
-  const startRecording = async () => {
-    setErrorMessage("");
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      chunksRef.current = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-      recorder.onstop = () => {
-        stream.getTracks().forEach((t) => t.stop());
-        void submitRecording(new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" }));
-      };
-      recorder.start();
-      mediaRecorderRef.current = recorder;
-      setStatus("recording");
-    } catch {
-      setErrorMessage("マイクにアクセスできませんでした。ブラウザのマイク権限をご確認ください。");
-      setStatus("error");
-    }
-  };
-
-  const stopRecording = () => {
-    mediaRecorderRef.current?.stop();
-  };
-
-  const busy = status === "processing";
+  const busy = status === "processing" || disabled;
 
   return (
     <div
@@ -136,7 +51,7 @@ export function VoiceRecorderPanel({
 
       <button
         type="button"
-        onClick={status === "recording" ? stopRecording : startRecording}
+        onClick={toggleRecording}
         disabled={busy}
         {...hoverHandlers}
         className="box-border flex w-full items-center justify-center gap-2.5 rounded-full border-none py-3.5 text-[14.5px] font-bold text-white transition-transform duration-150"
@@ -156,9 +71,11 @@ export function VoiceRecorderPanel({
         <span aria-hidden>{status === "recording" ? "■" : "🎙"}</span>
         {status === "recording"
           ? "録音を終了する"
-          : busy
+          : status === "processing"
             ? processingLabel
-            : "マイクで録音する"}
+            : disabled
+              ? disabledLabel
+              : "マイクで録音する"}
       </button>
 
       {status === "error" && errorMessage && (

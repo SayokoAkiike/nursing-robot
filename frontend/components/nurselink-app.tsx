@@ -9,7 +9,8 @@ import { NurseScreen, type NurseSubTab } from "@/components/nurse/nurse-screen";
 import type { EscalationVm } from "@/components/nurse/escalations-tab";
 import type { PatientOverviewVm } from "@/components/nurse/patients-tab";
 import type { HistoryBucketVm } from "@/components/nurse/robot-history-tab";
-import type { VoiceTurnResult } from "@/components/voice/voice-recorder-panel";
+import type { VoiceTurnResult } from "@/hooks/use-voice-recorder";
+import { runRoundingInteraction, roomNumberFor, type RoundingOutcome } from "@/lib/rounding-api";
 import {
   HISTORY_BUCKET_DEFS,
   MOOD_LEVELS,
@@ -18,10 +19,8 @@ import {
   PRIORITY_META,
   buildEscalation,
   buildHistoryRecordFromRun,
-  buildRunEntries,
   classify,
   currentTimestamp,
-  pickRandomScenario,
   seedHistory,
   timeLabelFor,
 } from "@/lib/mock-data";
@@ -54,6 +53,37 @@ const INITIAL_ESCALATIONS: Escalation[] = [
   { id: "e4", patient: "高橋さん", room: "110号室", request: "膝が痛みます", priority: "urgent", time: "12:45", status: "resolved", assignedNurse: "渡辺 真由美 看護師" },
 ];
 
+function buildRoundingConversationEntries(
+  patient: { name: string; room: string },
+  outcome: RoundingOutcome,
+  robotAudioText: string,
+): ConversationEntry[] {
+  const meta = PRIORITY_META[outcome.priority];
+  return [
+    { kind: "system", text: "ロボットが病室の巡回を開始しました" },
+    { kind: "system", text: `${patient.name}（${patient.room}）を発見しました` },
+    { kind: "robot", text: outcome.prompt },
+    { kind: "patient", text: outcome.utterance, initial: patient.name.charAt(0) },
+    {
+      kind: "classification",
+      category: outcome.needLabel,
+      priority: outcome.priority,
+      priorityLabel: meta.label,
+      route: outcome.route,
+    },
+    { kind: "robot-audio", text: robotAudioText },
+    {
+      kind: "complete",
+      text:
+        outcome.workflow === "delivery"
+          ? "配送ワークフローに接続しました"
+          : outcome.workflow === "information"
+            ? "看護師エスカレーションは不要と判断され、対応完了として記録しました"
+            : "エスカレーションを作成しました",
+    },
+  ];
+}
+
 export function NurselinkApp() {
   const [activeDevice, setActiveDevice] = useState<DeviceType | null>(null);
   const [loginInputs, setLoginInputs] = useState(EMPTY_LOGIN_INPUTS);
@@ -65,6 +95,8 @@ export function NurselinkApp() {
   const [stepRevealCount, setStepRevealCount] = useState(0);
   const [entriesForRun, setEntriesForRun] = useState<ConversationEntry[]>([]);
   const [playingAudio, setPlayingAudio] = useState(false);
+  const [voiceAudioUrl, setVoiceAudioUrl] = useState<string | null>(null);
+  const [roundingError, setRoundingError] = useState<string | null>(null);
 
   const [nurseSubTab, setNurseSubTab] = useState<NurseSubTab>("patients");
   const [dashTab, setDashTab] = useState<"open" | "resolved">("open");
@@ -88,6 +120,7 @@ export function NurselinkApp() {
 
   const patrolTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const audioElRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     return () => {
@@ -165,16 +198,57 @@ export function NurselinkApp() {
     setTimeout(() => setCallingId((cur) => (cur === id ? null : cur)), 1600);
   };
 
-  // ---- Robot patrol demo ----
-  const runPatrol = () => {
+  const playAudio = () => {
+    const audioEl = audioElRef.current;
+    if (!audioEl || !audioEl.src) return;
+    if (playingAudio) {
+      audioEl.pause();
+      setPlayingAudio(false);
+    } else {
+      void audioEl.play();
+      setPlayingAudio(true);
+    }
+  };
+
+  // ---- Robot patrol: tap "話しかける" to record a real mic utterance, send
+  // it to the selected voice engine (backend/services/voice_backends/), then
+  // run the transcript through the real backend/services/rounding_service.py
+  // state machine (start -> detect-patient -> start-interaction ->
+  // classify-need -> escalate/require-delivery/provide-information) via
+  // /api/rounding -- the same sequence demo/pages/3_🚶_巡回・要望分類デモ.py
+  // drives -- then reveal the result step by step in the same request-history
+  // flow the old canned demo scenario used. ----
+  const runVoiceTurn = async (voiceResult: VoiceTurnResult) => {
     if (isRunning) return;
     const patient = PATIENTS.find((p) => p.id === selectedPatientId) ?? PATIENTS[0];
-    const { utterance, moodLevel } = pickRandomScenario();
-    const result = classify(utterance, moodLevel.score);
-    const entries = buildRunEntries(patient, utterance, result, moodLevel.label);
+    const utterance = voiceResult.transcript || "（発話を認識できませんでした）";
 
     setIsRunning(true);
+    setRoundingError(null);
     setStepRevealCount(0);
+    setEntriesForRun([]);
+    setPlayingAudio(false);
+    setVoiceAudioUrl(voiceResult.audioUrl);
+
+    let outcome: RoundingOutcome;
+    try {
+      outcome = await runRoundingInteraction({
+        room: roomNumberFor(patient.room),
+        patientId: patient.id,
+        patientResponse: utterance,
+        inputMode: "voice",
+      });
+    } catch (err) {
+      setIsRunning(false);
+      setRoundingError(err instanceof Error ? err.message : "要望分類の実行に失敗しました。");
+      return;
+    }
+
+    const entries = buildRoundingConversationEntries(
+      patient,
+      outcome,
+      voiceResult.responseText || outcome.ackText,
+    );
     setEntriesForRun(entries);
 
     let count = 0;
@@ -184,54 +258,13 @@ export function NurselinkApp() {
       if (count >= entries.length) {
         if (patrolTimer.current) clearInterval(patrolTimer.current);
         setIsRunning(false);
-        const newEsc = buildEscalation(patient, utterance, result.priority);
-        const newRecord = buildHistoryRecordFromRun(patient.id, utterance, result.priority, entries);
+        const newEsc = buildEscalation(patient, utterance, outcome.priority);
+        const newRecord = buildHistoryRecordFromRun(patient.id, utterance, outcome.priority, entries);
         setEscalations((s) => [newEsc, ...s]);
         setConversationHistory((s) => [newRecord, ...s]);
         refreshNow();
       }
     }, 700);
-  };
-
-  const playAudio = () => {
-    setPlayingAudio(true);
-    setTimeout(() => setPlayingAudio(false), 1400);
-  };
-
-  // ---- Robot patrol: real voice (mic recording via VoiceRecorderPanel) ----
-  const runVoiceTurn = (voiceResult: VoiceTurnResult) => {
-    if (isRunning) return;
-    const patient = PATIENTS.find((p) => p.id === selectedPatientId) ?? PATIENTS[0];
-    const utterance = voiceResult.transcript || "（発話を認識できませんでした）";
-    const result = classify(utterance, null);
-    const entries: ConversationEntry[] = [
-      { kind: "system", text: "ロボットが病室の巡回を開始しました" },
-      { kind: "system", text: `${patient.name}（${patient.room}）を発見しました` },
-      { kind: "robot", text: "体調はいかがですか？" },
-      { kind: "patient", text: utterance, initial: patient.name.charAt(0) },
-      {
-        kind: "classification",
-        category: result.category,
-        priority: result.priority,
-        priorityLabel: PRIORITY_META[result.priority].label,
-        route: result.route,
-        autoEscalated: !!result.autoEscalated,
-      },
-      { kind: "robot-audio", text: voiceResult.responseText },
-      {
-        kind: "complete",
-        text: result.workflow === "delivery" ? "配送ワークフローに接続しました" : "エスカレーションを作成しました",
-      },
-    ];
-
-    setEntriesForRun(entries);
-    setStepRevealCount(entries.length);
-
-    const newEsc = buildEscalation(patient, utterance, result.priority);
-    const newRecord = buildHistoryRecordFromRun(patient.id, utterance, result.priority, entries);
-    setEscalations((s) => [newEsc, ...s]);
-    setConversationHistory((s) => [newRecord, ...s]);
-    refreshNow();
   };
 
   const revealedEntries = entriesForRun.slice(0, stepRevealCount);
@@ -363,7 +396,7 @@ export function NurselinkApp() {
       <header className="mx-auto mb-6 flex items-baseline gap-3" style={{ maxWidth: 1600 }}>
         <div className="text-[15px] font-bold tracking-[0.01em]">Nurselink</div>
         <div className="text-[12.5px]" style={{ color: "oklch(0.55 0.01 260)" }}>
-          デモ環境 · 実データ接続なし
+          デモ環境 · ロボット巡回はバックエンドAPIに接続
         </div>
       </header>
 
@@ -402,7 +435,6 @@ export function NurselinkApp() {
             selectedPatientId={selectedPatientId}
             onSelectPatient={setSelectedPatientId}
             isRunning={isRunning}
-            onRunPatrol={runPatrol}
             patientBannerLabel={`${selectedPatient.name}（${selectedPatient.room}）を見守り中`}
             patientBannerName={selectedPatient.name}
             patientInitial={selectedPatient.name.charAt(0)}
@@ -416,6 +448,13 @@ export function NurselinkApp() {
             playingAudio={playingAudio}
             onPlayAudio={playAudio}
             onVoiceTurnResult={runVoiceTurn}
+            roundingError={roundingError}
+          />
+          <audio
+            ref={audioElRef}
+            src={voiceAudioUrl ?? undefined}
+            onEnded={() => setPlayingAudio(false)}
+            className="hidden"
           />
         </DeviceFrame>
       )}

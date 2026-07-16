@@ -1,9 +1,9 @@
 "use client";
 
-import { useHover } from "@/hooks/use-hover";
 import { ConversationEntries } from "@/components/conversation-entries";
 import { StageTracker } from "@/components/robot/stage-tracker";
-import { VoiceRecorderPanel, type VoiceTurnResult } from "@/components/voice/voice-recorder-panel";
+import { TalkRecordButton } from "@/components/robot/talk-record-button";
+import type { VoiceTurnResult } from "@/hooks/use-voice-recorder";
 import type { PatientOption } from "@/components/bedside/bedside-screen";
 import type { ConversationEntry } from "@/lib/types";
 
@@ -12,7 +12,6 @@ export function RobotScreen({
   selectedPatientId,
   onSelectPatient,
   isRunning,
-  onRunPatrol,
   patientBannerLabel,
   patientBannerName,
   patientInitial,
@@ -26,12 +25,12 @@ export function RobotScreen({
   playingAudio,
   onPlayAudio,
   onVoiceTurnResult,
+  roundingError,
 }: {
   patients: PatientOption[];
   selectedPatientId: string;
   onSelectPatient: (id: string) => void;
   isRunning: boolean;
-  onRunPatrol: () => void;
   patientBannerLabel: string;
   patientBannerName: string;
   patientInitial: string;
@@ -45,6 +44,7 @@ export function RobotScreen({
   playingAudio: boolean;
   onPlayAudio: () => void;
   onVoiceTurnResult: (result: VoiceTurnResult) => void;
+  roundingError: string | null;
 }) {
   return (
     <div className="flex flex-col gap-5">
@@ -70,10 +70,17 @@ export function RobotScreen({
           </select>
         </div>
 
-        <TalkButton disabled={isRunning} onClick={onRunPatrol} label={isRunning ? "はなしかけ中…" : "話しかける（デモシナリオ）"} />
-      </div>
+        <TalkRecordButton onResult={onVoiceTurnResult} disabled={isRunning} />
 
-      <VoiceRecorderPanel label="実際に話しかけてみる（実音声）" onResult={onVoiceTurnResult} />
+        {roundingError && (
+          <div
+            className="rounded-[8px] px-3.5 py-2.5 text-[13px] font-semibold"
+            style={{ background: "oklch(0.95 0.03 25)", color: "oklch(0.5 0.17 25)" }}
+          >
+            {roundingError}
+          </div>
+        )}
+      </div>
 
       <div
         className="flex min-h-[520px] min-w-0 flex-col rounded-[10px] border bg-white p-2"
@@ -176,39 +183,5 @@ export function RobotScreen({
         </div>
       </div>
     </div>
-  );
-}
-
-function TalkButton({
-  disabled,
-  onClick,
-  label,
-}: {
-  disabled: boolean;
-  onClick: () => void;
-  label: string;
-}) {
-  const { hover, hoverHandlers } = useHover();
-  const canRun = !disabled;
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      {...hoverHandlers}
-      className="box-border flex w-full items-center justify-center gap-3 rounded-full border-none py-[26px] text-[19px] font-bold transition-transform duration-150"
-      style={{
-        cursor: canRun ? "pointer" : "not-allowed",
-        background: canRun ? "oklch(0.4 0.19 265)" : "oklch(0.9 0.003 260)",
-        color: canRun ? "white" : "oklch(0.65 0.008 250)",
-        boxShadow: canRun ? "0 10px 28px oklch(0.4 0.19 265 / 0.42)" : "none",
-        transform: canRun && hover ? "scale(1.03)" : undefined,
-      }}
-    >
-      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-4 4v-4H6a2 2 0 0 1-2-2Z" />
-      </svg>
-      {label}
-    </button>
   );
 }
