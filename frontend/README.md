@@ -18,6 +18,18 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
+### Backend API connection
+
+`app/api/voice/respond` and `app/api/rounding/[...path]` are Route Handlers
+that proxy to the real FastAPI backend (`backend/main.py` at the repo
+root, normally run with `uvicorn backend.main:app`). Configure them with
+these server-side env vars (e.g. in `frontend/.env.local`, not committed):
+
+| Variable               | Default                  | Purpose                                                                 |
+| ----------------------- | ------------------------- | ------------------------------------------------------------------------ |
+| `BACKEND_API_BASE_URL` | `http://127.0.0.1:8000`  | Base URL of the running FastAPI backend.                                |
+| `NURSE_TOKEN`          | `precare-dev-token-2026` | Sent as `x-nurse-token` for the one nurse-authenticated rounding call (`/rounding/{id}/escalate`); matches the repo-wide demo default in `.env.example` at the repo root. |
+
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Learn More

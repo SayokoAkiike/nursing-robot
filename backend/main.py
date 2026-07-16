@@ -13,6 +13,7 @@ from backend.api import (
     routes_rounding,
     routes_tasks,
     routes_verification,
+    routes_voice,
 )
 from backend.core.config import get_settings
 from backend.core.errors import DomainError
@@ -62,4 +63,5 @@ app.include_router(routes_analytics.router)
 app.include_router(routes_rounding.router)
 app.include_router(routes_escalations.router)
 app.include_router(routes_domain.router)
+app.include_router(routes_voice.router)
 

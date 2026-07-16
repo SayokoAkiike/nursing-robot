@@ -17,13 +17,6 @@ export const PATIENTS: Patient[] = [
   { id: "p4", name: "高橋さん", room: "110号室" },
 ];
 
-export const SAMPLE_PHRASES = [
-  "トイレに行きたいです",
-  "お腹が痛いです",
-  "喉が渇きました、お水がほしいです",
-  "特に用事はありません、少し話し相手が欲しいだけです",
-];
-
 export const QUICK_REQUESTS: QuickRequest[] = [
   { label: "トイレ", phrase: "トイレに行きたいです", kind: "toilet" },
   { label: "点滴", phrase: "点滴の様子を見てほしいです", kind: "drip" },
@@ -333,12 +326,6 @@ function randomId(prefix: string): string {
   return prefix + Date.now() + Math.random().toString(36).slice(2, 6);
 }
 
-export function pickRandomScenario(): { utterance: string; moodLevel: MoodLevel } {
-  const utterance = SAMPLE_PHRASES[Math.floor(Math.random() * SAMPLE_PHRASES.length)];
-  const moodLevel = MOOD_LEVELS[Math.floor(Math.random() * MOOD_LEVELS.length)];
-  return { utterance, moodLevel };
-}
-
 export function buildEscalation(
   patient: { name: string; room: string },
   request: string,
@@ -371,36 +358,4 @@ export function buildHistoryRecordFromRun(
     priorityLabel: PRIORITY_META[priority].label,
     entries,
   };
-}
-
-export function buildRunEntries(
-  patient: Patient,
-  utterance: string,
-  result: ClassificationResult,
-  moodLabel: string,
-): ConversationEntry[] {
-  const meta = PRIORITY_META[result.priority];
-  return [
-    { kind: "system", text: "ロボットが病室の巡回を開始しました" },
-    { kind: "system", text: `${patient.name}（${patient.room}）を発見しました` },
-    { kind: "robot", text: "体調はいかがですか？" },
-    { kind: "patient", text: utterance, initial: patient.name.charAt(0) },
-    {
-      kind: "classification",
-      category: result.category,
-      priority: result.priority,
-      priorityLabel: meta.label,
-      route: result.route,
-      moodLabel,
-      autoEscalated: !!result.autoEscalated,
-    },
-    { kind: "robot-audio", text: result.response },
-    {
-      kind: "complete",
-      text:
-        result.workflow === "delivery"
-          ? "配送ワークフローに接続しました"
-          : "エスカレーションを作成しました",
-    },
-  ];
 }

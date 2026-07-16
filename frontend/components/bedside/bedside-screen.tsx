@@ -4,6 +4,7 @@ import { useHover } from "@/hooks/use-hover";
 import { MoodSelector } from "@/components/bedside/mood-selector";
 import { QuickRequestGrid } from "@/components/bedside/quick-request-grid";
 import { ScheduleView } from "@/components/bedside/schedule-view";
+import { VoiceRecorderPanel, type VoiceTurnResult } from "@/components/voice/voice-recorder-panel";
 import type { ChatMessage, MoodId, QuickRequest } from "@/lib/types";
 
 export type PatientOption = { id: string; label: string };
@@ -27,6 +28,7 @@ export function BedsideScreen({
   onSendChat,
   emergencySent,
   onTriggerEmergency,
+  onVoiceRequest,
 }: {
   view: "home" | "schedule";
   patients: PatientOption[];
@@ -46,6 +48,7 @@ export function BedsideScreen({
   onSendChat: () => void;
   emergencySent: boolean;
   onTriggerEmergency: () => void;
+  onVoiceRequest: (result: VoiceTurnResult) => void;
 }) {
   if (view === "schedule") {
     return <ScheduleView patientLabel={bedsidePatientLabel} onBack={onBackFromSchedule} />;
@@ -110,6 +113,8 @@ export function BedsideScreen({
 
         </div>
       </div>
+
+      <VoiceRecorderPanel label="音声でリクエストを伝える" onResult={onVoiceRequest} />
 
       <div
         className="flex flex-col gap-3 rounded-[10px] border bg-white p-5"
